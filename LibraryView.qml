@@ -220,7 +220,7 @@ Rectangle {
                         spacing: 15
 
                         Text {
-                            text: trackNumber // Now flawlessly pulls the C++ section index!
+                            text: trackNumber
                             color: rootWindow.textMain
                             Layout.preferredWidth: 25
                             font.pixelSize: 12
@@ -263,7 +263,7 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         onDoubleClicked: {
-                            player.loadFile(trackUrl)
+                            player.playTrackList(libraryModel.getTrackUrls(), index)
                         }
                     }
                 }

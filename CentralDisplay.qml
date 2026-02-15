@@ -56,9 +56,8 @@ Rectangle {
 
                 Item {
                     width: 14
-                    height: 200 // Maximum visualizer height
+                    height: 200
 
-                    // STYLE 1: Mirrored (Expands up and down from the center)
                     Rectangle {
                         visible: settings.visualizerStyle === "Mirrored"
                         anchors.centerIn: parent
@@ -66,15 +65,9 @@ Rectangle {
                         height: modelData !== undefined ? modelData : 10
                         radius: 7
                         color: settings.accentColor
-                        Behavior on height {
-                            NumberAnimation {
-                                duration: 35
-                                easing.type: Easing.Linear
-                            }
-                        }
+                        // Removed Behavior for instant 60fps response
                     }
 
-                    // STYLE 2: Bottom Bars (Classic equalizer anchored to the floor)
                     Rectangle {
                         visible: settings.visualizerStyle === "Bottom Bars"
                         anchors.bottom: parent.bottom
@@ -83,15 +76,8 @@ Rectangle {
                         height: modelData !== undefined ? modelData : 10
                         radius: 7
                         color: settings.accentColor
-                        Behavior on height {
-                            NumberAnimation {
-                                duration: 35
-                                easing.type: Easing.Linear
-                            }
-                        }
                     }
 
-                    // STYLE 3: Floating Dots (Little glowing orbs bouncing to the math)
                     Rectangle {
                         visible: settings.visualizerStyle === "Floating Dots"
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -99,16 +85,7 @@ Rectangle {
                         height: 14
                         radius: 7
                         color: settings.accentColor
-
-                        // Dynamically pushes the Y coordinate up based on the C++ value
                         y: parent.height - (modelData !== undefined ? modelData : 10) - 14
-
-                        Behavior on y {
-                            NumberAnimation {
-                                duration: 35
-                                easing.type: Easing.Linear
-                            }
-                        }
                     }
                 }
             }

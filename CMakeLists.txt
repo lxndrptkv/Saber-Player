@@ -4,8 +4,8 @@ project(SaberPlayer VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Fixed: Use QuickControls2 (not Controls) for QQuickStyle and modern Quick UI
-find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent QuickControls2)
+# Fixed: Ask for QuickControls2 AND Multimedia
+find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent QuickControls2 Multimedia)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -43,12 +43,13 @@ set_target_properties(appSaberPlayer PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-# Fixed: Link QuickControls2 (not Controls)
+# Fixed: Link both QuickControls2 AND Multimedia so the visualizer builds!
 target_link_libraries(appSaberPlayer
     PRIVATE
         Qt6::Quick
         Qt6::Concurrent
         Qt6::QuickControls2
+        Qt6::Multimedia
         libvlc.lib
         libvlccore.lib
 )

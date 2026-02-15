@@ -8,6 +8,11 @@
 #include <QVariantList>
 #include <QtQml/qqml.h>
 #include <vlc/vlc.h>
+#include <QAudioSink>
+#include <QMediaDevices>
+#include <QAudioFormat>
+#include <QIODevice>
+#include <QThread>
 
 class PlayerController : public QObject
 {
@@ -20,9 +25,10 @@ class PlayerController : public QObject
     Q_PROPERTY(qint64 duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(QString formattedTime READ formattedTime NOTIFY timeTextChanged)
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
-
-    // NEW: C++ driven Audio Spectrum
     Q_PROPERTY(QVariantList spectrum READ spectrum NOTIFY spectrumChanged)
+
+    Q_PROPERTY(bool shuffle READ shuffle WRITE setShuffle NOTIFY shuffleChanged)
+    Q_PROPERTY(int repeatMode READ repeatMode WRITE setRepeatMode NOTIFY repeatModeChanged)
 
 public:
     explicit PlayerController(QObject *parent = nullptr);
@@ -36,9 +42,21 @@ public:
     int volume() const;
     QVariantList spectrum() const;
 
+    bool shuffle() const;
+    void setShuffle(bool s);
+
+    int repeatMode() const;
+    void setRepeatMode(int r);
+
     Q_INVOKABLE void seek(qint64 ms);
     Q_INVOKABLE void changeVolume(int vol);
     Q_INVOKABLE QString formatTime(qint64 ms) const;
+
+    Q_INVOKABLE void playNext();
+    Q_INVOKABLE void playPrevious();
+    Q_INVOKABLE void playTrackList(const QVariantList &trackUrls, int startIndex);
+
+    void processAudio(const void* samples, unsigned count);
 
 public slots:
     void play();
@@ -53,11 +71,13 @@ signals:
     void durationChanged();
     void timeTextChanged();
     void volumeChanged();
-    void spectrumChanged(); // NEW
+    void spectrumChanged();
+    void shuffleChanged();
+    void repeatModeChanged();
+    void trackEnded();
 
 private slots:
     void updateInterface();
-    void updateVisualizer(); // NEW
 
 private:
     libvlc_instance_t *m_vlcInstance;
@@ -65,13 +85,22 @@ private:
     QString m_currentSource;
     bool m_isPlaying;
 
-    QTimer *m_ticker;       // UI Updates (250ms)
-    QTimer *m_visTicker;    // Visualizer Updates (33ms / 30fps)
+    QTimer *m_ticker;
 
     qint64 m_position;
     qint64 m_duration;
     int m_volume;
-    QVariantList m_spectrum; // Stores the 25 bar heights
+    QVariantList m_spectrum;
+
+    bool m_shuffle;
+    int m_repeatMode;
+
+    QVariantList m_playlist;
+    int m_currentIndex;
+
+    QAudioSink *m_audioSink = nullptr;
+    QIODevice *m_audioOutput = nullptr;
+    std::vector<int16_t> m_fftBuffer;
 
     QString formatMilliseconds(qint64 ms) const;
 };

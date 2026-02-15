@@ -24,7 +24,7 @@ QVariant LibraryModel::data(const QModelIndex &index, int role) const {
     case FolderRole: return track.folder;
     case SizeRole: return track.size;
     case UrlRole: return track.url;
-    case TrackNumRole: return track.trackNumber; // Expose track number to QML
+    case TrackNumRole: return track.trackNumber;
     default: return QVariant();
     }
 }
@@ -37,7 +37,7 @@ QHash<int, QByteArray> LibraryModel::roleNames() const {
     roles[FolderRole] = "trackFolder";
     roles[SizeRole] = "trackSize";
     roles[UrlRole] = "trackUrl";
-    roles[TrackNumRole] = "trackNumber"; // Map to QML property
+    roles[TrackNumRole] = "trackNumber";
     return roles;
 }
 
@@ -78,7 +78,7 @@ QList<Track> LibraryModel::runScan() {
                 folderName,
                 sizeFormatted,
                 QUrl::fromLocalFile(filePath),
-                0 // Initialize trackNumber
+                0
             });
         }
     }
@@ -134,7 +134,6 @@ void LibraryModel::applySortAndFilter() {
         return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
     });
 
-    // Calculates the # index so it restarts at 1 for every Album/Folder!
     QString currentSection = "";
     int currentTrackNum = 1;
     for (auto &track : m_tracks) {
@@ -146,4 +145,12 @@ void LibraryModel::applySortAndFilter() {
     }
 
     endResetModel();
+}
+
+QVariantList LibraryModel::getTrackUrls() const {
+    QVariantList list;
+    for (const auto& track : m_tracks) {
+        list.append(track.url);
+    }
+    return list;
 }

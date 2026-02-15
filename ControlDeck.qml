@@ -9,18 +9,39 @@ Rectangle {
 
     property var player
     property var settings
-
-    // DIRECT INJECTION: Bypasses the bugged QML signal cache
     property var appFileDialog
+    property bool isMiniPlayer: false
 
-    property bool isHovered: deckHover.hovered || trackMouse.pressed || volMouse.pressed || stopButton.pressed || playButton.pressed || openButton.pressed || muteButton.pressed
+    signal toggleMiniPlayer()
+
+    property bool isHovered: deckHover.hovered || trackMouse.pressed || volMouse.pressed
 
     HoverHandler {
         id: deckHover
     }
 
+    Connections {
+        target: player
+        function onTrackEnded() {
+            if (settings.autoPlay) {
+                player.playNext()
+            }
+        }
+    }
+
     Component.onCompleted: {
         player.changeVolume(settings.savedVolume)
+    }
+
+    // ==========================================
+    // WINDOW DRAG HANDLER (For Mini Player)
+    // ==========================================
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.isMiniPlayer
+        onPressed: {
+            rootWindow.startSystemMove()
+        }
     }
 
     Rectangle {
@@ -81,28 +102,54 @@ Rectangle {
 
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
-                spacing: 20
+                spacing: 12
 
                 Button {
-                    id: stopButton
-                    text: "⏹"
+                    text: "🔀"
                     onClicked: {
-                        player.stop()
+                        player.shuffle = !player.shuffle
                     }
-                    background: Rectangle {
-                        color: "transparent"
-                    }
+                    background: Rectangle { color: "transparent" }
                     contentItem: Text {
                         text: parent.text
-                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
-                        font.pixelSize: 18
+                        color: player.shuffle ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
+                        font.pixelSize: 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
                 }
 
                 Button {
-                    id: playButton
+                    text: "⏹"
+                    onClicked: {
+                        player.stop()
+                    }
+                    background: Rectangle { color: "transparent" }
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
+                        font.pixelSize: 16
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Button {
+                    text: "⏮"
+                    onClicked: {
+                        player.playPrevious()
+                    }
+                    background: Rectangle { color: "transparent" }
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
+                        font.pixelSize: 20
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Button {
                     text: player.isPlaying ? "⏸" : "▶"
                     onClicked: {
                         if (player.isPlaying) {
@@ -116,11 +163,7 @@ Rectangle {
                         implicitHeight: 42
                         radius: 21
                         color: parent.hovered ? Qt.lighter(settings.accentColor, 1.1) : settings.accentColor
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: 150
-                            }
-                        }
+                        Behavior on color { ColorAnimation { duration: 150 } }
                     }
                     contentItem: Text {
                         text: parent.text
@@ -133,18 +176,45 @@ Rectangle {
                 }
 
                 Button {
-                    id: openButton
-                    text: "⏏"
+                    text: "⏭"
                     onClicked: {
-                        appFileDialog.open() // Calls the dialog directly!
+                        player.playNext()
                     }
-                    background: Rectangle {
-                        color: "transparent"
-                    }
+                    background: Rectangle { color: "transparent" }
                     contentItem: Text {
                         text: parent.text
                         color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
-                        font.pixelSize: 18
+                        font.pixelSize: 20
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Button {
+                    text: "⏏"
+                    onClicked: {
+                        appFileDialog.open()
+                    }
+                    background: Rectangle { color: "transparent" }
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
+                        font.pixelSize: 16
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Button {
+                    text: player.repeatMode === 2 ? "🔂" : "🔁"
+                    onClicked: {
+                        player.repeatMode = (player.repeatMode + 1) % 3
+                    }
+                    background: Rectangle { color: "transparent" }
+                    contentItem: Text {
+                        text: parent.text
+                        color: player.repeatMode > 0 ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
+                        font.pixelSize: 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -192,11 +262,7 @@ Rectangle {
                         height: width
                         radius: width / 2
                         color: settings.accentColor
-                        Behavior on width {
-                            NumberAnimation {
-                                duration: 100
-                            }
-                        }
+                        Behavior on width { NumberAnimation { duration: 100 } }
                     }
 
                     MouseArea {
@@ -232,16 +298,13 @@ Rectangle {
             }
 
             Button {
-                id: muteButton
                 text: player.volume === 0 ? "🔇" : "🔊"
                 onClicked: {
                     let newVol = player.volume > 0 ? 0 : 50
                     player.changeVolume(newVol)
                     settings.savedVolume = newVol
                 }
-                background: Rectangle {
-                    color: "transparent"
-                }
+                background: Rectangle { color: "transparent" }
                 contentItem: Text {
                     text: parent.text
                     color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
@@ -251,9 +314,10 @@ Rectangle {
 
             Item {
                 id: volSlider
-                Layout.preferredWidth: 100
-                Layout.maximumWidth: 100
+                Layout.preferredWidth: 80
+                Layout.maximumWidth: 80
                 height: 20
+                visible: !root.isMiniPlayer
 
                 property real visualVolume: player.volume / 100
 
@@ -284,25 +348,28 @@ Rectangle {
                     height: width
                     radius: width / 2
                     color: rootWindow.textMain
-                    Behavior on width {
-                        NumberAnimation {
-                            duration: 100
-                        }
-                    }
+                    Behavior on width { NumberAnimation { duration: 100 } }
                 }
 
                 MouseArea {
                     id: volMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    onPressed: {
-                        volSlider.updateVol(mouseX)
-                    }
-                    onPositionChanged: {
-                        if (pressed) {
-                            volSlider.updateVol(mouseX)
-                        }
-                    }
+                    onPressed: { volSlider.updateVol(mouseX) }
+                    onPositionChanged: { if (pressed) volSlider.updateVol(mouseX) }
+                }
+            }
+
+            Button {
+                text: root.isMiniPlayer ? "🗖" : "🗗"
+                onClicked: {
+                    root.toggleMiniPlayer()
+                }
+                background: Rectangle { color: "transparent" }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
+                    font.pixelSize: 18
                 }
             }
         }

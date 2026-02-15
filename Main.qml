@@ -8,11 +8,16 @@ ApplicationWindow {
     id: rootWindow
     width: 1200
     height: 800
+    minimumWidth: isMiniPlayer ? 480 : 800
+    minimumHeight: isMiniPlayer ? 120 : 600
     visible: true
     title: qsTr("SaberPlayer")
     color: bgMain
 
     property int activeScreen: 0
+
+    // MINI PLAYER STATE
+    property bool isMiniPlayer: false
 
     property bool isDark: settingsManager.themeMode === "Dark"
     property color bgMain: isDark ? "#0a0a0a" : "#f0f2f5"
@@ -31,6 +36,7 @@ ApplicationWindow {
 
         SideBar {
             id: sideBar
+            visible: !rootWindow.isMiniPlayer
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.left: parent.left
@@ -52,6 +58,7 @@ ApplicationWindow {
 
         Item {
             id: contentArea
+            visible: !rootWindow.isMiniPlayer
             anchors.top: parent.top
             anchors.bottom: controlDeck.top
             anchors.left: sideBar.right
@@ -70,6 +77,7 @@ ApplicationWindow {
 
         Item {
             id: bottomTriggerArea
+            visible: !rootWindow.isMiniPlayer
             anchors.bottom: parent.bottom
             anchors.left: sideBar.right
             anchors.right: parent.right
@@ -81,13 +89,14 @@ ApplicationWindow {
 
         ControlDeck {
             id: controlDeck
-            anchors.left: sideBar.right
+            anchors.left: rootWindow.isMiniPlayer ? parent.left : sideBar.right
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 90
+
+            height: rootWindow.isMiniPlayer ? rootWindow.height : 90
             z: 5
 
-            property bool hideDeck: (rootWindow.activeScreen === 0) && !bottomHover.hovered && !isHovered
+            property bool hideDeck: !rootWindow.isMiniPlayer && (rootWindow.activeScreen === 0) && !bottomHover.hovered && !isHovered
 
             anchors.bottomMargin: hideDeck ? -90 : 0
             opacity: hideDeck ? 0.0 : 1.0
@@ -107,6 +116,24 @@ ApplicationWindow {
             player: playerController
             settings: settingsManager
             appFileDialog: fileDialog
+
+            isMiniPlayer: rootWindow.isMiniPlayer
+
+            onToggleMiniPlayer: {
+                if (rootWindow.isMiniPlayer) {
+                    rootWindow.isMiniPlayer = false
+                    rootWindow.width = 1200
+                    rootWindow.height = 800
+                    // Restore standard window decorations
+                    rootWindow.flags = Qt.Window
+                } else {
+                    rootWindow.isMiniPlayer = true
+                    rootWindow.width = 480
+                    rootWindow.height = 120
+                    // Make it Frameless AND Always On Top!
+                    rootWindow.flags = Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+                }
+            }
         }
     }
 
@@ -117,14 +144,11 @@ ApplicationWindow {
         }
     }
 
-    // ==========================================
-    // EXTENDED SETTINGS POPUP
-    // ==========================================
     Popup {
         id: settingsPopup
         anchors.centerIn: parent
         width: 380
-        height: 500 // Taller to fit the new app options
+        height: 500
         modal: true
         background: Rectangle {
             color: bgPanel
@@ -145,7 +169,6 @@ ApplicationWindow {
                 font.bold: true
             }
 
-            // THEME OPTIONS
             RowLayout {
                 spacing: 15
                 Text {
@@ -164,7 +187,6 @@ ApplicationWindow {
                 }
             }
 
-            // VISUALIZER OPTIONS
             RowLayout {
                 spacing: 15
                 Text {
@@ -183,7 +205,6 @@ ApplicationWindow {
                 }
             }
 
-            // ACCENT COLOR OPTIONS
             Text {
                 text: "Accent Color:"
                 color: textMain
@@ -212,7 +233,6 @@ ApplicationWindow {
                 }
             }
 
-            // APP TOGGLES
             Rectangle {
                 Layout.fillWidth: true
                 height: 1

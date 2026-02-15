@@ -5,6 +5,7 @@
 #include <QList>
 #include <QUrl>
 #include <QFutureWatcher>
+#include <QVariantList>
 #include <QtQml/qqml.h>
 
 struct Track {
@@ -14,7 +15,7 @@ struct Track {
     QString folder;
     QString size;
     QUrl url;
-    int trackNumber = 0; // Added for section-specific indexing
+    int trackNumber = 0;
 };
 
 class LibraryModel : public QAbstractListModel
@@ -33,7 +34,7 @@ public:
         FolderRole,
         SizeRole,
         UrlRole,
-        TrackNumRole // Added role
+        TrackNumRole
     };
 
     explicit LibraryModel(QObject *parent = nullptr);
@@ -49,6 +50,8 @@ public:
     Q_INVOKABLE void sortBy(const QString &column);
     Q_INVOKABLE void scanLibrary();
     Q_INVOKABLE void filter(const QString &query);
+
+    Q_INVOKABLE QVariantList getTrackUrls() const;
 
 public slots:
     void setSortColumn(const QString &column);
