@@ -29,6 +29,7 @@ qt_add_qml_module(appSaberPlayer
         settingsmanager.cpp
         librarymodel.h
         librarymodel.cpp
+        QML_FILES CdView.qml
 )
 
 # Setup VLC SDK Paths

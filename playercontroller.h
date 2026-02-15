@@ -56,6 +56,10 @@ public:
     Q_INVOKABLE void playPrevious();
     Q_INVOKABLE void playTrackList(const QVariantList &trackUrls, int startIndex);
 
+    // NEW: CD Detection Functions
+    Q_INVOKABLE QVariantList detectCdDrives();
+    Q_INVOKABLE QVariantList getCdTracks(const QString &drivePath);
+
     void processAudio(const void* samples, unsigned count);
 
 public slots:

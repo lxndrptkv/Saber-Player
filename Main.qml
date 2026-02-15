@@ -16,7 +16,6 @@ ApplicationWindow {
 
     property int activeScreen: 0
 
-    // MINI PLAYER STATE
     property bool isMiniPlayer: false
 
     property bool isDark: settingsManager.themeMode === "Dark"
@@ -71,7 +70,9 @@ ApplicationWindow {
                 CentralDisplay { player: playerController; settings: settingsManager }
                 LibraryView { player: playerController; settings: settingsManager; libraryModel: libModel }
                 Rectangle { color: "transparent"; Text { anchors.centerIn: parent; text: "Playlists\n(Coming Soon)"; color: textSub; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter } }
-                Rectangle { color: "transparent"; Text { anchors.centerIn: parent; text: "Audio CD\n(Coming Soon)"; color: textSub; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter } }
+
+                // NEW CD VIEW
+                CdView { player: playerController; settings: settingsManager }
             }
         }
 
@@ -124,13 +125,11 @@ ApplicationWindow {
                     rootWindow.isMiniPlayer = false
                     rootWindow.width = 1200
                     rootWindow.height = 800
-                    // Restore standard window decorations
                     rootWindow.flags = Qt.Window
                 } else {
                     rootWindow.isMiniPlayer = true
                     rootWindow.width = 480
                     rootWindow.height = 120
-                    // Make it Frameless AND Always On Top!
                     rootWindow.flags = Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
                 }
             }

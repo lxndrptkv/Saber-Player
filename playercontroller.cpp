@@ -2,6 +2,8 @@
 #include <cmath>
 #include <complex>
 #include <QRandomGenerator>
+#include <QStorageInfo>
+#include <QDir>
 
 namespace {
 const double PI = 3.14159265358979323846;
@@ -57,6 +59,10 @@ PlayerController::PlayerController(QObject *parent)
 
     QAudioDevice info = QMediaDevices::defaultAudioOutput();
     m_audioSink = new QAudioSink(info, format, this);
+
+    // Expand the audio buffer to 500ms to effortlessly absorb VLC's bursts
+    m_audioSink->setBufferSize(88200);
+
     m_audioOutput = m_audioSink->start();
 
     libvlc_audio_set_format_callbacks(m_vlcPlayer, cb_audio_setup, nullptr);
@@ -169,7 +175,9 @@ void PlayerController::playPrevious() {
 
 void PlayerController::play() {
     if (m_vlcPlayer) {
-        if (m_audioSink) m_audioSink->resume();
+        if (m_audioSink && m_audioSink->state() == QAudio::SuspendedState) {
+            m_audioSink->resume();
+        }
         libvlc_media_player_play(m_vlcPlayer);
         m_isPlaying = true;
         m_ticker->start(250);
@@ -199,6 +207,8 @@ void PlayerController::stop() {
         m_spectrum = empty;
         emit spectrumChanged();
 
+        if (m_audioSink) m_audioSink->stop();
+
         emit isPlayingChanged();
         emit positionChanged();
         emit timeTextChanged();
@@ -222,12 +232,45 @@ void PlayerController::changeVolume(int vol) {
 }
 
 void PlayerController::loadFile(const QUrl &fileUrl) {
-    QByteArray urlBytes = fileUrl.toString().toUtf8();
-    libvlc_media_t *media = libvlc_media_new_location(m_vlcInstance, urlBytes.constData());
+    if (m_isPlaying) {
+        m_isPlaying = false;
+        if (m_vlcPlayer) libvlc_media_player_stop(m_vlcPlayer);
+        m_ticker->stop();
+    }
+
+    libvlc_media_t *media = nullptr;
+
+    if (fileUrl.scheme() == "cdda") {
+        QString drive = fileUrl.path();
+        QString mrl = "cdda://" + drive;
+        media = libvlc_media_new_location(m_vlcInstance, mrl.toUtf8().constData());
+
+        if (media) {
+            QString query = fileUrl.query();
+            if (query.startsWith("track=")) {
+                QString opt = ":cdda-track=" + query.mid(6);
+                libvlc_media_add_option(media, opt.toUtf8().constData());
+            }
+        }
+        m_currentSource = "Audio CD - Track " + fileUrl.query().mid(6);
+    } else {
+        QByteArray urlBytes = fileUrl.toString().toUtf8();
+        media = libvlc_media_new_location(m_vlcInstance, urlBytes.constData());
+        m_currentSource = fileUrl.fileName();
+    }
+
     if (media) {
         libvlc_media_player_set_media(m_vlcPlayer, media);
         libvlc_media_release(media);
-        m_currentSource = fileUrl.fileName();
+
+        if (m_audioSink) {
+            m_audioSink->stop();
+            // Re-apply buffer size on track change
+            m_audioSink->setBufferSize(88200);
+            m_audioOutput = m_audioSink->start();
+            m_audioSink->setVolume(m_volume / 100.0f);
+        }
+
         emit currentSourceChanged();
         play();
     }
@@ -267,13 +310,21 @@ void PlayerController::processAudio(const void* samples, unsigned count) {
 
     qint64 bytesToWrite = count * 4;
 
+    // Safe, non-blocking chunk writer to prevent audio stutter
     if (m_audioSink && m_audioOutput) {
-        int failsafe = 0;
-        while (m_audioSink->bytesFree() < bytesToWrite && m_isPlaying) {
-            QThread::msleep(2);
-            if (++failsafe > 50) break;
+        qint64 bytesWritten = 0;
+        const char* ptr = static_cast<const char*>(samples);
+
+        while (bytesWritten < bytesToWrite && m_isPlaying) {
+            qint64 freeSpace = m_audioSink->bytesFree();
+            if (freeSpace > 0) {
+                qint64 chunk = std::min(freeSpace, bytesToWrite - bytesWritten);
+                m_audioOutput->write(ptr + bytesWritten, chunk);
+                bytesWritten += chunk;
+            } else {
+                QThread::msleep(1); // Safely idle for 1ms without freezing
+            }
         }
-        m_audioOutput->write(static_cast<const char*>(samples), bytesToWrite);
     }
 
     const int16_t* pcm = static_cast<const int16_t*>(samples);
@@ -282,13 +333,19 @@ void PlayerController::processAudio(const void* samples, unsigned count) {
         m_fftBuffer.push_back(mono);
     }
 
+    // FFT Memory Leak Fix: Process only the freshest data and wipe the rest!
     if (m_fftBuffer.size() >= 1024) {
         std::vector<Complex> data(1024);
+
+        // Grab the LAST 1024 samples for real-time accuracy
+        size_t offset = m_fftBuffer.size() - 1024;
         for (int i = 0; i < 1024; ++i) {
             double window = 0.54 - 0.46 * std::cos(2 * PI * i / 1023.0);
-            data[i] = Complex(m_fftBuffer[i] * window, 0);
+            data[i] = Complex(m_fftBuffer[offset + i] * window, 0);
         }
-        m_fftBuffer.erase(m_fftBuffer.begin(), m_fftBuffer.begin() + 1024);
+
+        // Wipe the entire buffer so memory stays perfectly flat!
+        m_fftBuffer.clear();
 
         fft(data);
 
@@ -315,4 +372,49 @@ void PlayerController::processAudio(const void* samples, unsigned count) {
             emit spectrumChanged();
         }, Qt::QueuedConnection);
     }
+}
+
+// ===============================================
+// AUDIO CD HARDWARE SCANNER
+// ===============================================
+QVariantList PlayerController::detectCdDrives() {
+    QVariantList drives;
+    for (const QStorageInfo &storage : QStorageInfo::mountedVolumes()) {
+        if (storage.isValid() && storage.isReady()) {
+            QDir dir(storage.rootPath());
+            QStringList cdaFiles = dir.entryList({"*.cda"}, QDir::Files);
+            if (!cdaFiles.isEmpty()) {
+                QVariantMap driveInfo;
+                driveInfo["path"] = storage.rootPath();
+                driveInfo["name"] = storage.name().isEmpty() ? "Audio CD" : storage.name();
+                driveInfo["trackCount"] = cdaFiles.size();
+                drives.append(driveInfo);
+            }
+        }
+    }
+    return drives;
+}
+
+QVariantList PlayerController::getCdTracks(const QString &drivePath) {
+    QVariantList tracks;
+    QDir dir(drivePath);
+    QStringList cdaFiles = dir.entryList({"*.cda"}, QDir::Files);
+    int trackNum = 1;
+
+    QString driveLetter = drivePath.left(2);
+
+    for (const QString &file : cdaFiles) {
+        QVariantMap track;
+        track["trackName"] = "Track " + QString::number(trackNum);
+        track["trackNumber"] = trackNum;
+        track["trackArtist"] = "Audio CD";
+        track["trackSize"] = "CDDA";
+
+        QString mrl = "cdda:///" + driveLetter + "/?track=" + QString::number(trackNum);
+        track["trackUrl"] = mrl;
+
+        tracks.append(track);
+        trackNum++;
+    }
+    return tracks;
 }
