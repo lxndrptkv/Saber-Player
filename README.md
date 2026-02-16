@@ -5,3 +5,5 @@ Made it cuz im autistic and needed a player that i liked and work to how i want
 <img width="1199" height="827" alt="image" src="https://github.com/user-attachments/assets/b3dc7263-39f9-4c8d-9ee2-22635acad5e1" />
 
 <img width="1199" height="288" alt="image" src="https://github.com/user-attachments/assets/6180d4d1-44f1-4fec-af46-e405929142c2" />
+
+CD Ripping is a thing but i havent tested how well it works or if it works at all.
