@@ -180,11 +180,15 @@ Rectangle {
                             border.color: rootWindow.borderCol
                             border.width: 1
 
-                            Text {
+                            // FIXED: SWAPPED TEXT EMOJI FOR NATIVE LOGO
+                            Image {
                                 anchors.centerIn: parent
-                                text: "🎵"
-                                font.pixelSize: 32
-                                color: rootWindow.textSub
+                                source: "logo.png"
+                                width: 44
+                                height: 44
+                                fillMode: Image.PreserveAspectFit
+                                mipmap: true
+                                opacity: 0.5
                             }
                         }
 

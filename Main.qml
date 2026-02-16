@@ -6,17 +6,27 @@ import SaberPlayer 1.0
 
 ApplicationWindow {
     id: rootWindow
-    width: 1200
-    height: 800
-    minimumWidth: isMiniPlayer ? 480 : 800
+
+    // SMOOTH WINDOW RESIZING
+    width: isMiniPlayer ? 650 : 1200
+    height: isMiniPlayer ? 120 : 800
+    minimumWidth: isMiniPlayer ? 650 : 800
     minimumHeight: isMiniPlayer ? 120 : 600
+
+    // Cinematic morphing animations for the physical window!
+    Behavior on width { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
+    Behavior on height { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
+    Behavior on minimumWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
+    Behavior on minimumHeight { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
+
     visible: true
     title: qsTr("SaberPlayer")
     color: bgMain
 
-    property int activeScreen: 0
+    flags: isMiniPlayer ? (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint) : Qt.Window
 
-    property bool isMiniPlayer: false
+    property int activeScreen: 0
+    property bool isMiniPlayer: cmdStartMini
 
     property bool isDark: settingsManager.themeMode === "Dark"
     property color bgMain: isDark ? "#0a0a0a" : "#f0f2f5"
@@ -29,6 +39,13 @@ ApplicationWindow {
     PlayerController { id: playerController }
     SettingsManager { id: settingsManager }
     LibraryModel { id: libModel }
+    CdManager { id: cdManager }
+
+    Component.onCompleted: {
+        if (cmdStartFile !== "") {
+            playerController.loadFile(cmdStartFile)
+        }
+    }
 
     Item {
         anchors.fill: parent
@@ -70,9 +87,7 @@ ApplicationWindow {
                 CentralDisplay { player: playerController; settings: settingsManager }
                 LibraryView { player: playerController; settings: settingsManager; libraryModel: libModel }
                 Rectangle { color: "transparent"; Text { anchors.centerIn: parent; text: "Playlists\n(Coming Soon)"; color: textSub; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter } }
-
-                // NEW CD VIEW
-                CdView { player: playerController; settings: settingsManager }
+                CdView { player: playerController; settings: settingsManager; cdManager: cdManager }
             }
         }
 
@@ -102,17 +117,8 @@ ApplicationWindow {
             anchors.bottomMargin: hideDeck ? -90 : 0
             opacity: hideDeck ? 0.0 : 1.0
 
-            Behavior on anchors.bottomMargin {
-                NumberAnimation {
-                    duration: 400
-                    easing.type: Easing.OutQuart
-                }
-            }
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: 300
-                }
-            }
+            Behavior on anchors.bottomMargin { NumberAnimation { duration: 400; easing.type: Easing.OutQuart } }
+            Behavior on opacity { NumberAnimation { duration: 300 } }
 
             player: playerController
             settings: settingsManager
@@ -122,15 +128,11 @@ ApplicationWindow {
 
             onToggleMiniPlayer: {
                 if (rootWindow.isMiniPlayer) {
-                    rootWindow.isMiniPlayer = false
-                    rootWindow.width = 1200
-                    rootWindow.height = 800
                     rootWindow.flags = Qt.Window
+                    rootWindow.isMiniPlayer = false
                 } else {
-                    rootWindow.isMiniPlayer = true
-                    rootWindow.width = 480
-                    rootWindow.height = 120
                     rootWindow.flags = Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+                    rootWindow.isMiniPlayer = true
                 }
             }
         }
@@ -147,7 +149,7 @@ ApplicationWindow {
         id: settingsPopup
         anchors.centerIn: parent
         width: 380
-        height: 500
+        height: 520
         modal: true
         background: Rectangle {
             color: bgPanel
@@ -161,137 +163,82 @@ ApplicationWindow {
             anchors.margins: 25
             spacing: 20
 
-            Text {
-                text: "Settings"
-                color: textMain
-                font.pixelSize: 22
-                font.bold: true
-            }
+            Text { text: "Settings"; color: textMain; font.pixelSize: 22; font.bold: true }
 
             RowLayout {
                 spacing: 15
-                Text {
-                    text: "App Theme:"
-                    color: textMain
-                    font.pixelSize: 14
-                    Layout.preferredWidth: 120
-                }
+                Text { text: "App Theme:"; color: textMain; font.pixelSize: 14; Layout.preferredWidth: 120 }
                 ComboBox {
                     Layout.fillWidth: true
                     model: ["Dark", "Light"]
                     currentIndex: settingsManager.themeMode === "Dark" ? 0 : 1
-                    onActivated: {
-                        settingsManager.themeMode = currentText
-                    }
+                    onActivated: { settingsManager.themeMode = currentText }
                 }
             }
 
             RowLayout {
                 spacing: 15
-                Text {
-                    text: "Visualizer Style:"
-                    color: textMain
-                    font.pixelSize: 14
-                    Layout.preferredWidth: 120
-                }
+                Text { text: "Visualizer Style:"; color: textMain; font.pixelSize: 14; Layout.preferredWidth: 120 }
                 ComboBox {
                     Layout.fillWidth: true
                     model: ["Mirrored", "Bottom Bars", "Floating Dots"]
                     currentIndex: model.indexOf(settingsManager.visualizerStyle)
-                    onActivated: {
-                        settingsManager.visualizerStyle = currentText
-                    }
+                    onActivated: { settingsManager.visualizerStyle = currentText }
                 }
             }
 
-            Text {
-                text: "Accent Color:"
-                color: textMain
-                font.pixelSize: 14
-                Layout.topMargin: 10
-            }
+            Text { text: "Accent Color:"; color: textMain; font.pixelSize: 14; Layout.topMargin: 10 }
             RowLayout {
                 spacing: 10
                 Repeater {
                     model: ["#0055FF", "#FF2255", "#00CC66", "#FF9900", "#9933FF"]
                     delegate: Rectangle {
-                        width: 35
-                        height: 35
-                        radius: 17.5
-                        color: modelData
+                        width: 35; height: 35; radius: 17.5; color: modelData
                         border.width: settingsManager.accentColor === modelData ? 3 : 0
                         border.color: textMain
                         MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                settingsManager.accentColor = modelData
-                            }
+                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            onClicked: { settingsManager.accentColor = modelData }
                         }
                     }
                 }
             }
 
             Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: borderCol
-                Layout.topMargin: 10
-                Layout.bottomMargin: 5
+                Layout.fillWidth: true; height: 1; color: borderCol
+                Layout.topMargin: 10; Layout.bottomMargin: 5
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                Text {
-                    text: "Auto-Play Next File"
-                    color: textMain
-                    font.pixelSize: 14
-                    Layout.fillWidth: true
-                }
-                Switch {
-                    checked: settingsManager.autoPlay
-                    onCheckedChanged: {
-                        settingsManager.autoPlay = checked
-                    }
-                }
+                Text { text: "Auto-Play Next File"; color: textMain; font.pixelSize: 14; Layout.fillWidth: true }
+                Switch { checked: settingsManager.autoPlay; onCheckedChanged: { settingsManager.autoPlay = checked } }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                Text {
-                    text: "Minimize to System Tray"
-                    color: textMain
-                    font.pixelSize: 14
-                    Layout.fillWidth: true
-                }
-                Switch {
-                    checked: settingsManager.minimizeToTray
-                    onCheckedChanged: {
-                        settingsManager.minimizeToTray = checked
-                    }
-                }
+                Text { text: "Show in Windows Right-Click Menu"; color: textMain; font.pixelSize: 14; Layout.fillWidth: true }
+                Switch { checked: settingsManager.contextMenuEnabled; onCheckedChanged: { settingsManager.contextMenuEnabled = checked } }
             }
 
-            Item {
-                Layout.fillHeight: true
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Minimize to System Tray"; color: textMain; font.pixelSize: 14; Layout.fillWidth: true }
+                Switch { checked: settingsManager.minimizeToTray; onCheckedChanged: { settingsManager.minimizeToTray = checked } }
             }
+
+            Item { Layout.fillHeight: true }
 
             Button {
                 text: "Refresh Library"
                 Layout.fillWidth: true
-                onClicked: {
-                    libModel.scanLibrary()
-                }
+                onClicked: { libModel.scanLibrary() }
                 background: Rectangle {
-                    radius: 6
-                    color: parent.hovered ? settingsManager.accentColor : borderCol
+                    radius: 6; color: parent.hovered ? settingsManager.accentColor : borderCol
                 }
                 contentItem: Text {
-                    text: parent.text
-                    color: isDark ? "white" : (parent.parent.hovered ? "white" : "black")
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: true
+                    text: parent.text; color: isDark ? "white" : (parent.parent.hovered ? "white" : "black")
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.bold: true
                 }
             }
         }

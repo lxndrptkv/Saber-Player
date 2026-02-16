@@ -13,6 +13,7 @@
 #include <QAudioFormat>
 #include <QIODevice>
 #include <QThread>
+#include <QMutex>
 
 class PlayerController : public QObject
 {
@@ -53,12 +54,9 @@ public:
     Q_INVOKABLE QString formatTime(qint64 ms) const;
 
     Q_INVOKABLE void playNext();
+    Q_INVOKABLE void autoPlayNext();
     Q_INVOKABLE void playPrevious();
     Q_INVOKABLE void playTrackList(const QVariantList &trackUrls, int startIndex);
-
-    // NEW: CD Detection Functions
-    Q_INVOKABLE QVariantList detectCdDrives();
-    Q_INVOKABLE QVariantList getCdTracks(const QString &drivePath);
 
     void processAudio(const void* samples, unsigned count);
 
@@ -82,6 +80,7 @@ signals:
 
 private slots:
     void updateInterface();
+    void updateVisualizer();
 
 private:
     libvlc_instance_t *m_vlcInstance;
@@ -90,6 +89,7 @@ private:
     bool m_isPlaying;
 
     QTimer *m_ticker;
+    QTimer *m_visTicker;
 
     qint64 m_position;
     qint64 m_duration;
@@ -104,7 +104,10 @@ private:
 
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_audioOutput = nullptr;
+
+    QMutex m_audioMutex;
     std::vector<int16_t> m_fftBuffer;
+    std::vector<double> m_smoothedSpectrum;
 
     QString formatMilliseconds(qint64 ms) const;
 };

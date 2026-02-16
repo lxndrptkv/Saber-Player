@@ -2,8 +2,7 @@
 #include <cmath>
 #include <complex>
 #include <QRandomGenerator>
-#include <QStorageInfo>
-#include <QDir>
+#include <QMutexLocker>
 
 namespace {
 const double PI = 3.14159265358979323846;
@@ -48,8 +47,12 @@ PlayerController::PlayerController(QObject *parent)
     m_ticker = new QTimer(this);
     connect(m_ticker, &QTimer::timeout, this, &PlayerController::updateInterface);
 
+    m_visTicker = new QTimer(this);
+    connect(m_visTicker, &QTimer::timeout, this, &PlayerController::updateVisualizer);
+
     for(int i = 0; i < 25; i++) {
         m_spectrum.append(10.0);
+        m_smoothedSpectrum.push_back(10.0);
     }
 
     QAudioFormat format;
@@ -59,10 +62,7 @@ PlayerController::PlayerController(QObject *parent)
 
     QAudioDevice info = QMediaDevices::defaultAudioOutput();
     m_audioSink = new QAudioSink(info, format, this);
-
-    // Expand the audio buffer to 500ms to effortlessly absorb VLC's bursts
     m_audioSink->setBufferSize(88200);
-
     m_audioOutput = m_audioSink->start();
 
     libvlc_audio_set_format_callbacks(m_vlcPlayer, cb_audio_setup, nullptr);
@@ -125,49 +125,51 @@ void PlayerController::playTrackList(const QVariantList &trackUrls, int startInd
     }
 }
 
-void PlayerController::playNext() {
+void PlayerController::autoPlayNext() {
     if (m_playlist.isEmpty()) return;
-
     if (m_repeatMode == 2) {
         seek(0);
         play();
         return;
     }
+    playNext();
+}
 
+void PlayerController::playNext() {
+    if (m_playlist.isEmpty()) return;
     if (m_shuffle) {
-        m_currentIndex = QRandomGenerator::global()->bounded(m_playlist.size());
+        if (m_playlist.size() > 1) {
+            int nextIdx = m_currentIndex;
+            while (nextIdx == m_currentIndex) {
+                nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
+            }
+            m_currentIndex = nextIdx;
+        }
     } else {
         m_currentIndex++;
         if (m_currentIndex >= m_playlist.size()) {
-            if (m_repeatMode == 1) {
-                m_currentIndex = 0;
-            } else {
-                m_currentIndex = m_playlist.size() - 1;
-                stop();
-                return;
-            }
+            if (m_repeatMode == 1) m_currentIndex = 0;
+            else { m_currentIndex = m_playlist.size() - 1; stop(); return; }
         }
     }
     loadFile(m_playlist[m_currentIndex].toUrl());
 }
 
 void PlayerController::playPrevious() {
-    if (m_playlist.isEmpty()) {
-        seek(0);
-        return;
-    }
+    if (m_playlist.isEmpty()) { seek(0); return; }
+    if (m_position > 3000) { seek(0); return; }
 
-    if (m_position > 3000) {
-        seek(0);
-        return;
-    }
-
-    m_currentIndex--;
-    if (m_currentIndex < 0) {
-        if (m_repeatMode == 1) {
-            m_currentIndex = m_playlist.size() - 1;
-        } else {
-            m_currentIndex = 0;
+    if (m_shuffle && m_playlist.size() > 1) {
+        int nextIdx = m_currentIndex;
+        while (nextIdx == m_currentIndex) {
+            nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
+        }
+        m_currentIndex = nextIdx;
+    } else {
+        m_currentIndex--;
+        if (m_currentIndex < 0) {
+            if (m_repeatMode == 1) m_currentIndex = m_playlist.size() - 1;
+            else m_currentIndex = 0;
         }
     }
     loadFile(m_playlist[m_currentIndex].toUrl());
@@ -175,12 +177,11 @@ void PlayerController::playPrevious() {
 
 void PlayerController::play() {
     if (m_vlcPlayer) {
-        if (m_audioSink && m_audioSink->state() == QAudio::SuspendedState) {
-            m_audioSink->resume();
-        }
+        if (m_audioSink && m_audioSink->state() == QAudio::SuspendedState) m_audioSink->resume();
         libvlc_media_player_play(m_vlcPlayer);
         m_isPlaying = true;
         m_ticker->start(250);
+        m_visTicker->start(16);
         emit isPlayingChanged();
     }
 }
@@ -191,6 +192,7 @@ void PlayerController::pause() {
         libvlc_media_player_pause(m_vlcPlayer);
         m_isPlaying = false;
         m_ticker->stop();
+        m_visTicker->stop();
         emit isPlayingChanged();
     }
 }
@@ -200,15 +202,13 @@ void PlayerController::stop() {
         libvlc_media_player_stop(m_vlcPlayer);
         m_isPlaying = false;
         m_ticker->stop();
+        m_visTicker->stop();
         m_position = 0;
-
         QVariantList empty;
-        for(int i = 0; i < 25; i++) empty.append(10.0);
+        for(int i = 0; i < 25; i++) { empty.append(10.0); m_smoothedSpectrum[i] = 10.0; }
         m_spectrum = empty;
         emit spectrumChanged();
-
         if (m_audioSink) m_audioSink->stop();
-
         emit isPlayingChanged();
         emit positionChanged();
         emit timeTextChanged();
@@ -225,9 +225,7 @@ void PlayerController::seek(qint64 ms) {
 
 void PlayerController::changeVolume(int vol) {
     m_volume = vol;
-    if (m_audioSink) {
-        m_audioSink->setVolume(vol / 100.0f);
-    }
+    if (m_audioSink) m_audioSink->setVolume(vol / 100.0f);
     emit volumeChanged();
 }
 
@@ -236,15 +234,13 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
         m_isPlaying = false;
         if (m_vlcPlayer) libvlc_media_player_stop(m_vlcPlayer);
         m_ticker->stop();
+        m_visTicker->stop();
     }
-
     libvlc_media_t *media = nullptr;
-
     if (fileUrl.scheme() == "cdda") {
         QString drive = fileUrl.path();
         QString mrl = "cdda://" + drive;
         media = libvlc_media_new_location(m_vlcInstance, mrl.toUtf8().constData());
-
         if (media) {
             QString query = fileUrl.query();
             if (query.startsWith("track=")) {
@@ -258,19 +254,15 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
         media = libvlc_media_new_location(m_vlcInstance, urlBytes.constData());
         m_currentSource = fileUrl.fileName();
     }
-
     if (media) {
         libvlc_media_player_set_media(m_vlcPlayer, media);
         libvlc_media_release(media);
-
         if (m_audioSink) {
             m_audioSink->stop();
-            // Re-apply buffer size on track change
             m_audioSink->setBufferSize(88200);
             m_audioOutput = m_audioSink->start();
             m_audioSink->setVolume(m_volume / 100.0f);
         }
-
         emit currentSourceChanged();
         play();
     }
@@ -283,138 +275,108 @@ void PlayerController::updateInterface() {
             if (m_isPlaying) {
                 m_isPlaying = false;
                 m_ticker->stop();
+                m_visTicker->stop();
                 emit isPlayingChanged();
                 emit trackEnded();
             }
             return;
         }
-
         qint64 currentPos = libvlc_media_player_get_time(m_vlcPlayer);
-        if (currentPos >= 0 && currentPos != m_position) {
-            m_position = currentPos;
-            emit positionChanged();
-        }
-
+        if (currentPos >= 0 && currentPos != m_position) { m_position = currentPos; emit positionChanged(); }
         qint64 currentDur = libvlc_media_player_get_length(m_vlcPlayer);
-        if (currentDur >= 0 && currentDur != m_duration) {
-            m_duration = currentDur;
-            emit durationChanged();
-        }
-
+        if (currentDur >= 0 && currentDur != m_duration) { m_duration = currentDur; emit durationChanged(); }
         emit timeTextChanged();
     }
 }
 
 void PlayerController::processAudio(const void* samples, unsigned count) {
     if (!m_isPlaying) return;
-
     qint64 bytesToWrite = count * 4;
-
-    // Safe, non-blocking chunk writer to prevent audio stutter
     if (m_audioSink && m_audioOutput) {
         qint64 bytesWritten = 0;
         const char* ptr = static_cast<const char*>(samples);
-
         while (bytesWritten < bytesToWrite && m_isPlaying) {
             qint64 freeSpace = m_audioSink->bytesFree();
             if (freeSpace > 0) {
                 qint64 chunk = std::min(freeSpace, bytesToWrite - bytesWritten);
                 m_audioOutput->write(ptr + bytesWritten, chunk);
                 bytesWritten += chunk;
-            } else {
-                QThread::msleep(1); // Safely idle for 1ms without freezing
-            }
+            } else QThread::msleep(1);
         }
     }
-
     const int16_t* pcm = static_cast<const int16_t*>(samples);
+    QMutexLocker locker(&m_audioMutex);
     for (unsigned i = 0; i < count; ++i) {
         int16_t mono = (pcm[i * 2] + pcm[i * 2 + 1]) / 2;
         m_fftBuffer.push_back(mono);
     }
-
-    // FFT Memory Leak Fix: Process only the freshest data and wipe the rest!
-    if (m_fftBuffer.size() >= 1024) {
-        std::vector<Complex> data(1024);
-
-        // Grab the LAST 1024 samples for real-time accuracy
-        size_t offset = m_fftBuffer.size() - 1024;
-        for (int i = 0; i < 1024; ++i) {
-            double window = 0.54 - 0.46 * std::cos(2 * PI * i / 1023.0);
-            data[i] = Complex(m_fftBuffer[offset + i] * window, 0);
-        }
-
-        // Wipe the entire buffer so memory stays perfectly flat!
-        m_fftBuffer.clear();
-
-        fft(data);
-
-        QVariantList newSpectrum;
-        for (int i = 0; i < 25; i++) {
-            int lowBin = std::pow(2.0, i * 9.0 / 24.0);
-            int highBin = std::pow(2.0, (i + 1) * 9.0 / 24.0);
-            if (highBin <= lowBin) highBin = lowBin + 1;
-            if (highBin > 512) highBin = 512;
-
-            double mag = 0;
-            for (int b = lowBin; b < highBin; b++) {
-                mag += std::abs(data[b]);
-            }
-            mag /= (highBin - lowBin);
-
-            double h = 10.0 + (mag / 80000.0) * 190.0;
-            if (h > 200) h = 200;
-            newSpectrum.append(h);
-        }
-
-        QMetaObject::invokeMethod(this, [this, newSpectrum]() {
-            m_spectrum = newSpectrum;
-            emit spectrumChanged();
-        }, Qt::QueuedConnection);
-    }
+    if (m_fftBuffer.size() > 4096) m_fftBuffer.erase(m_fftBuffer.begin(), m_fftBuffer.begin() + (m_fftBuffer.size() - 4096));
 }
 
 // ===============================================
-// AUDIO CD HARDWARE SCANNER
+// HIGH SENSITIVITY LOGARITHMIC VISUALIZER
 // ===============================================
-QVariantList PlayerController::detectCdDrives() {
-    QVariantList drives;
-    for (const QStorageInfo &storage : QStorageInfo::mountedVolumes()) {
-        if (storage.isValid() && storage.isReady()) {
-            QDir dir(storage.rootPath());
-            QStringList cdaFiles = dir.entryList({"*.cda"}, QDir::Files);
-            if (!cdaFiles.isEmpty()) {
-                QVariantMap driveInfo;
-                driveInfo["path"] = storage.rootPath();
-                driveInfo["name"] = storage.name().isEmpty() ? "Audio CD" : storage.name();
-                driveInfo["trackCount"] = cdaFiles.size();
-                drives.append(driveInfo);
-            }
+void PlayerController::updateVisualizer() {
+    if (!m_isPlaying) return;
+    std::vector<int16_t> localBuffer;
+    {
+        QMutexLocker locker(&m_audioMutex);
+        if (m_fftBuffer.size() < 1024) return;
+        localBuffer.assign(m_fftBuffer.end() - 1024, m_fftBuffer.end());
+    }
+    std::vector<Complex> data(1024);
+    for (int i = 0; i < 1024; ++i) {
+        double window = 0.54 - 0.46 * std::cos(2 * PI * i / 1023.0);
+        data[i] = Complex(localBuffer[i] * window, 0);
+    }
+    fft(data);
+
+    QVariantList newSpectrum;
+    double logMinFreq = std::log10(40.0);
+    double logMaxFreq = std::log10(16000.0);
+
+    for (int i = 0; i < 25; i++) {
+        // Calculate frequency bounds for this bar
+        double lowFreq = std::pow(10.0, logMinFreq + (logMaxFreq - logMinFreq) * i / 25.0);
+        double highFreq = std::pow(10.0, logMinFreq + (logMaxFreq - logMinFreq) * (i + 1) / 25.0);
+
+        int lowBin = std::max(1, (int)(lowFreq / (44100.0 / 1024.0)));
+        int highBin = std::min(511, (int)(highFreq / (44100.0 / 1024.0)));
+        if (highBin <= lowBin) highBin = lowBin + 1;
+
+        double peakMag = 0.0;
+        for (int b = lowBin; b < highBin; b++) {
+            double mag = std::abs(data[b]);
+            if (mag > peakMag) peakMag = mag;
         }
+
+        double db = 0.0;
+        if (peakMag > 0.0) {
+            // Reference level for 16-bit audio
+            db = 20.0 * std::log10(peakMag / 32768.0);
+        }
+
+        // --- NEW NONLINEAR SCALING LOGIC ---
+        // Floor at -50dB for high sensitivity to quiet details
+        double minDb = -50.0;
+        double normalized = (db - minDb) / (-minDb); // 0.0 to 1.0 range
+        if (normalized < 0.0) normalized = 0.0;
+
+        // Power scaling (0.6): This makes the bars "jump" more for low signals
+        // but slows down their approach to the top.
+        double powerScaled = std::pow(normalized, 0.6);
+        if (powerScaled > 1.0) powerScaled = 1.0;
+
+        double targetHeight = 10.0 + (powerScaled * 180.0);
+
+        // GRAVITY TUNE: Snappy rise, natural fall
+        if (targetHeight > m_smoothedSpectrum[i]) {
+            m_smoothedSpectrum[i] += 0.75 * (targetHeight - m_smoothedSpectrum[i]);
+        } else {
+            m_smoothedSpectrum[i] += 0.20 * (targetHeight - m_smoothedSpectrum[i]);
+        }
+        newSpectrum.append(m_smoothedSpectrum[i]);
     }
-    return drives;
-}
-
-QVariantList PlayerController::getCdTracks(const QString &drivePath) {
-    QVariantList tracks;
-    QDir dir(drivePath);
-    QStringList cdaFiles = dir.entryList({"*.cda"}, QDir::Files);
-    int trackNum = 1;
-
-    QString driveLetter = drivePath.left(2);
-
-    for (const QString &file : cdaFiles) {
-        QVariantMap track;
-        track["trackName"] = "Track " + QString::number(trackNum);
-        track["trackNumber"] = trackNum;
-        track["trackArtist"] = "Audio CD";
-        track["trackSize"] = "CDDA";
-
-        QString mrl = "cdda:///" + driveLetter + "/?track=" + QString::number(trackNum);
-        track["trackUrl"] = mrl;
-
-        tracks.append(track);
-        trackNum++;
-    }
-    return tracks;
+    m_spectrum = newSpectrum;
+    emit spectrumChanged();
 }

@@ -1,22 +1,43 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QQuickStyle>
+#include <QQmlContext>
+#include <QUrl>
+#include <QFileInfo>
+#include <QIcon> // NEW: Required to handle Windows Icons!
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
-    // Force Fusion style to support custom dark theme backgrounds
-    QQuickStyle::setStyle("Fusion");
+    // PERFECT FIX: Set the global application icon for the Taskbar and Titlebar right at startup!
+    app.setWindowIcon(QIcon(":/qt/qml/SaberPlayer/logo.png"));
+
+    // Default startup states
+    QString startFile = "";
+    bool startMini = false;
+
+    // Parse command line arguments passed by Windows Explorer
+    for (int i = 1; i < argc; ++i) {
+        QString arg = argv[i];
+        if (arg == "--mini") {
+            startMini = true;
+        } else if (QFileInfo::exists(arg)) {
+            // Converts the Windows path into a URL the VLC engine can read safely
+            startFile = QUrl::fromLocalFile(arg).toString();
+        }
+    }
 
     QQmlApplicationEngine engine;
-    const QUrl url(u"qrc:/qt/qml/SaberPlayer/Main.qml"_qs);  // Fixed: Added /qt/qml/ prefix as required by Qt 6 standard setup
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
-                     &app, [url](QObject *obj, const QUrl &objUrl) {
-                         if (!obj && url == objUrl)
-                             QCoreApplication::exit(-1);
-                     }, Qt::QueuedConnection);
-    engine.load(url);
+
+    // Inject the intercepted commands directly into the QML Root Context
+    engine.rootContext()->setContextProperty("cmdStartFile", startFile);
+    engine.rootContext()->setContextProperty("cmdStartMini", startMini);
+
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
+                     &app, []() { QCoreApplication::exit(-1); },
+                     Qt::QueuedConnection);
+
+    engine.loadFromModule("SaberPlayer", "Main");
 
     return app.exec();
 }

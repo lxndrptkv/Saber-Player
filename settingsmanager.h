@@ -12,11 +12,12 @@ class SettingsManager : public QObject {
     Q_PROPERTY(QString accentColor READ accentColor WRITE setAccentColor NOTIFY accentColorChanged)
     Q_PROPERTY(int savedVolume READ savedVolume WRITE setSavedVolume NOTIFY savedVolumeChanged)
     Q_PROPERTY(QString themeMode READ themeMode WRITE setThemeMode NOTIFY themeModeChanged)
-
-    // NEW SETTINGS
     Q_PROPERTY(QString visualizerStyle READ visualizerStyle WRITE setVisualizerStyle NOTIFY visualizerStyleChanged)
     Q_PROPERTY(bool autoPlay READ autoPlay WRITE setAutoPlay NOTIFY autoPlayChanged)
     Q_PROPERTY(bool minimizeToTray READ minimizeToTray WRITE setMinimizeToTray NOTIFY minimizeToTrayChanged)
+
+    // NEW: Windows Context Menu Toggle
+    Q_PROPERTY(bool contextMenuEnabled READ contextMenuEnabled WRITE setContextMenuEnabled NOTIFY contextMenuEnabledChanged)
 
 public:
     explicit SettingsManager(QObject *parent = nullptr);
@@ -39,6 +40,9 @@ public:
     bool minimizeToTray() const;
     void setMinimizeToTray(bool min);
 
+    bool contextMenuEnabled() const;
+    void setContextMenuEnabled(bool enabled);
+
 signals:
     void accentColorChanged();
     void savedVolumeChanged();
@@ -46,6 +50,7 @@ signals:
     void visualizerStyleChanged();
     void autoPlayChanged();
     void minimizeToTrayChanged();
+    void contextMenuEnabledChanged();
 
 private:
     QSettings m_settings;
@@ -55,6 +60,7 @@ private:
     QString m_visualizerStyle;
     bool m_autoPlay;
     bool m_minimizeToTray;
+    bool m_contextMenuEnabled;
 };
 
 #endif

@@ -11,6 +11,8 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(appSaberPlayer
     main.cpp
+    appicon.rc
+
 )
 
 qt_add_qml_module(appSaberPlayer
@@ -30,6 +32,9 @@ qt_add_qml_module(appSaberPlayer
         librarymodel.h
         librarymodel.cpp
         QML_FILES CdView.qml
+        SOURCES cdmanager.h cdmanager.cpp
+        RESOURCES
+                logo.png
 )
 
 # Setup VLC SDK Paths
@@ -66,5 +71,9 @@ add_custom_command(TARGET appSaberPlayer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${VLC_SDK_DIR}/plugins"
         "$<TARGET_FILE_DIR:appSaberPlayer>/plugins"
+    # NEW: Copy the Lua scripts so VLC can access the internet!
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${VLC_SDK_DIR}/lua"
+        "$<TARGET_FILE_DIR:appSaberPlayer>/lua"
     COMMENT "Copying VLC runtime files..."
 )

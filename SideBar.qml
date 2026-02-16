@@ -42,12 +42,20 @@ Rectangle {
         anchors.left: parent.left
         width: parent.width; height: 70
 
-        Text {
-            x: 22; anchors.verticalCenter: parent.verticalCenter
-            text: "⚔️"; font.pixelSize: 20
+        Image {
+            // Glides slightly to stay balanced with the text when expanding
+            x: root.isExpanded ? 20 : 18
+            anchors.verticalCenter: parent.verticalCenter
+            source: "logo.png"
+            width: 28
+            height: 28
+            fillMode: Image.PreserveAspectFit
+            mipmap: true
+            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutQuart } }
         }
+
         Text {
-            x: 55; anchors.verticalCenter: parent.verticalCenter
+            x: 58; anchors.verticalCenter: parent.verticalCenter
             text: "SaberPlayer"; color: settings.accentColor; font.pixelSize: 18; font.bold: true
             opacity: root.isExpanded ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 200 } }
@@ -62,8 +70,9 @@ Rectangle {
         Repeater {
             model: navModel
             delegate: Button {
+                // FIX: Absolutely centers the colored background inside the sidebar
+                anchors.horizontalCenter: parent.horizontalCenter
                 width: root.width - 20
-                x: 10 // Centers the button in the 64px collapsed state
                 height: 44
 
                 background: Rectangle {
@@ -75,8 +84,13 @@ Rectangle {
 
                 contentItem: Item {
                     Text {
-                        x: 12; anchors.verticalCenter: parent.verticalCenter
-                        text: iconText; color: root.currentTab === index ? "white" : rootWindow.textMain; font.pixelSize: 16
+                        // FIX: Makes the icon dynamically slide to the dead-center of the pill when collapsed!
+                        x: root.isExpanded ? 12 : (parent.width - width) / 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: iconText
+                        color: root.currentTab === index ? "white" : rootWindow.textMain
+                        font.pixelSize: 16
+                        Behavior on x { NumberAnimation { duration: 300; easing.type: Easing.OutQuart } }
                     }
                     Text {
                         x: 45; anchors.verticalCenter: parent.verticalCenter
@@ -94,21 +108,29 @@ Rectangle {
     // Settings Button (Pinned to bottom)
     Button {
         anchors.bottom: parent.bottom; anchors.bottomMargin: 15
+        anchors.horizontalCenter: parent.horizontalCenter // FIX: Centers the settings pill too
         width: root.width - 20
-        x: 10
         height: 44
+
         background: Rectangle {
             radius: 6; color: parent.hovered ? rootWindow.borderCol : "transparent"
             Behavior on color { ColorAnimation { duration: 150 } }
         }
+
         contentItem: Item {
-            Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: "⚙️"; color: rootWindow.textMain; font.pixelSize: 16 }
+            Text {
+                // Glides to center
+                x: root.isExpanded ? 12 : (parent.width - width) / 2
+                anchors.verticalCenter: parent.verticalCenter; text: "⚙️"; color: rootWindow.textMain; font.pixelSize: 16
+                Behavior on x { NumberAnimation { duration: 300; easing.type: Easing.OutQuart } }
+            }
             Text {
                 x: 45; anchors.verticalCenter: parent.verticalCenter; text: "Settings"; color: rootWindow.textMain; font.pixelSize: 14
                 opacity: root.isExpanded ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 200 } }
             }
         }
+
         onClicked: root.openSettings()
     }
 }
