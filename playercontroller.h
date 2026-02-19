@@ -14,6 +14,7 @@
 #include <QIODevice>
 #include <QThread>
 #include <QMutex>
+#include "coverfetcher.h" // RESTORED: Network Art Fetcher
 
 class PlayerController : public QObject
 {
@@ -28,8 +29,16 @@ class PlayerController : public QObject
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
     Q_PROPERTY(QVariantList spectrum READ spectrum NOTIFY spectrumChanged)
 
+    // SAFE MATH PROPERTY
+    Q_PROPERTY(qreal progress READ progress NOTIFY positionChanged)
+
     Q_PROPERTY(bool shuffle READ shuffle WRITE setShuffle NOTIFY shuffleChanged)
     Q_PROPERTY(int repeatMode READ repeatMode WRITE setRepeatMode NOTIFY repeatModeChanged)
+
+    // Metadata Properties
+    Q_PROPERTY(QString currentTitle READ currentTitle NOTIFY metaDataChanged)
+    Q_PROPERTY(QString currentArtist READ currentArtist NOTIFY metaDataChanged)
+    Q_PROPERTY(QString currentArt READ currentArt NOTIFY metaDataChanged)
 
 public:
     explicit PlayerController(QObject *parent = nullptr);
@@ -39,6 +48,7 @@ public:
     QString currentSource() const;
     qint64 position() const;
     qint64 duration() const;
+    qreal progress() const;
     QString formattedTime() const;
     int volume() const;
     QVariantList spectrum() const;
@@ -49,9 +59,14 @@ public:
     int repeatMode() const;
     void setRepeatMode(int r);
 
-    Q_INVOKABLE void seek(qint64 ms);
-    Q_INVOKABLE void changeVolume(int vol);
-    Q_INVOKABLE QString formatTime(qint64 ms) const;
+    QString currentTitle() const;
+    QString currentArtist() const;
+    QString currentArt() const;
+
+    // FIXED: Changed from qint64/int to qreal to prevent Qt6 NaN crash aborts!
+    Q_INVOKABLE void seek(qreal ms);
+    Q_INVOKABLE void changeVolume(qreal vol);
+    Q_INVOKABLE QString formatTime(qreal ms) const;
 
     Q_INVOKABLE void playNext();
     Q_INVOKABLE void autoPlayNext();
@@ -77,6 +92,7 @@ signals:
     void shuffleChanged();
     void repeatModeChanged();
     void trackEnded();
+    void metaDataChanged();
 
 private slots:
     void updateInterface();
@@ -87,6 +103,15 @@ private:
     libvlc_media_player_t *m_vlcPlayer;
     QString m_currentSource;
     bool m_isPlaying;
+
+    // Metadata States
+    QString m_currentTitle;
+    QString m_currentArtist;
+    QString m_currentAlbum; // RESTORED
+    QString m_currentArt;
+    bool m_artPending;
+
+    CoverFetcher m_coverFetcher; // RESTORED
 
     QTimer *m_ticker;
     QTimer *m_visTicker;

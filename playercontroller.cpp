@@ -3,6 +3,10 @@
 #include <complex>
 #include <QRandomGenerator>
 #include <QMutexLocker>
+#include <QThread>
+#include <QFileInfo>
+#include <QDir>
+#include <utility>
 
 namespace {
 const double PI = 3.14159265358979323846;
@@ -39,9 +43,10 @@ void cb_audio_play(void *data, const void *samples, unsigned count, int64_t pts)
 }
 
 PlayerController::PlayerController(QObject *parent)
-    : QObject(parent), m_isPlaying(false), m_position(0), m_duration(0), m_volume(50), m_shuffle(false), m_repeatMode(0), m_currentIndex(-1)
+    : QObject(parent), m_isPlaying(false), m_position(0), m_duration(0), m_volume(50), m_shuffle(false), m_repeatMode(0), m_currentIndex(-1), m_artPending(false)
 {
-    m_vlcInstance = libvlc_new(0, nullptr);
+    const char * const vlc_args[] = { "--no-video" };
+    m_vlcInstance = libvlc_new(sizeof(vlc_args) / sizeof(vlc_args[0]), vlc_args);
     m_vlcPlayer = libvlc_media_player_new(m_vlcInstance);
 
     m_ticker = new QTimer(this);
@@ -49,6 +54,13 @@ PlayerController::PlayerController(QObject *parent)
 
     m_visTicker = new QTimer(this);
     connect(m_visTicker, &QTimer::timeout, this, &PlayerController::updateVisualizer);
+
+    connect(&m_coverFetcher, &CoverFetcher::coverFound, this, [this](const QString &artist, const QString &album, const QString &path) {
+        if (m_currentArtist == artist && m_currentAlbum == album) {
+            m_currentArt = path;
+            emit metaDataChanged();
+        }
+    });
 
     for(int i = 0; i < 25; i++) {
         m_spectrum.append(10.0);
@@ -69,8 +81,7 @@ PlayerController::PlayerController(QObject *parent)
     libvlc_audio_set_callbacks(m_vlcPlayer, cb_audio_play, nullptr, nullptr, nullptr, nullptr, this);
 }
 
-PlayerController::~PlayerController()
-{
+PlayerController::~PlayerController() {
     if (m_vlcPlayer) {
         libvlc_media_player_stop(m_vlcPlayer);
         libvlc_media_player_release(m_vlcPlayer);
@@ -84,29 +95,27 @@ qint64 PlayerController::position() const { return m_position; }
 qint64 PlayerController::duration() const { return m_duration; }
 int PlayerController::volume() const { return m_volume; }
 QVariantList PlayerController::spectrum() const { return m_spectrum; }
-
 bool PlayerController::shuffle() const { return m_shuffle; }
-void PlayerController::setShuffle(bool s) {
-    if (m_shuffle != s) {
-        m_shuffle = s;
-        emit shuffleChanged();
-    }
-}
-
 int PlayerController::repeatMode() const { return m_repeatMode; }
-void PlayerController::setRepeatMode(int r) {
-    if (m_repeatMode != r) {
-        m_repeatMode = r;
-        emit repeatModeChanged();
-    }
+QString PlayerController::currentTitle() const { return m_currentTitle; }
+QString PlayerController::currentArtist() const { return m_currentArtist; }
+QString PlayerController::currentArt() const { return m_currentArt; }
+
+qreal PlayerController::progress() const {
+    if (m_duration <= 0) return 0.0;
+    qreal p = static_cast<qreal>(m_position) / static_cast<qreal>(m_duration);
+    if (std::isnan(p) || std::isinf(p)) return 0.0;
+    return p;
 }
 
-QString PlayerController::formattedTime() const {
-    return formatMilliseconds(m_position) + " / " + formatMilliseconds(m_duration);
-}
+void PlayerController::setShuffle(bool s) { if (m_shuffle != s) { m_shuffle = s; emit shuffleChanged(); } }
+void PlayerController::setRepeatMode(int r) { if (m_repeatMode != r) { m_repeatMode = r; emit repeatModeChanged(); } }
 
-QString PlayerController::formatTime(qint64 ms) const {
-    return formatMilliseconds(ms);
+QString PlayerController::formattedTime() const { return formatMilliseconds(m_position) + " / " + formatMilliseconds(m_duration); }
+
+QString PlayerController::formatTime(qreal ms) const {
+    if (std::isnan(ms) || std::isinf(ms)) return "00:00";
+    return formatMilliseconds(static_cast<qint64>(ms));
 }
 
 QString PlayerController::formatMilliseconds(qint64 ms) const {
@@ -120,18 +129,12 @@ QString PlayerController::formatMilliseconds(qint64 ms) const {
 void PlayerController::playTrackList(const QVariantList &trackUrls, int startIndex) {
     m_playlist = trackUrls;
     m_currentIndex = startIndex;
-    if (m_currentIndex >= 0 && m_currentIndex < m_playlist.size()) {
-        loadFile(m_playlist[m_currentIndex].toUrl());
-    }
+    if (m_currentIndex >= 0 && m_currentIndex < m_playlist.size()) loadFile(m_playlist[m_currentIndex].toUrl());
 }
 
 void PlayerController::autoPlayNext() {
     if (m_playlist.isEmpty()) return;
-    if (m_repeatMode == 2) {
-        seek(0);
-        play();
-        return;
-    }
+    if (m_repeatMode == 2) { seek(0); play(); return; }
     playNext();
 }
 
@@ -140,9 +143,7 @@ void PlayerController::playNext() {
     if (m_shuffle) {
         if (m_playlist.size() > 1) {
             int nextIdx = m_currentIndex;
-            while (nextIdx == m_currentIndex) {
-                nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
-            }
+            while (nextIdx == m_currentIndex) nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
             m_currentIndex = nextIdx;
         }
     } else {
@@ -161,9 +162,7 @@ void PlayerController::playPrevious() {
 
     if (m_shuffle && m_playlist.size() > 1) {
         int nextIdx = m_currentIndex;
-        while (nextIdx == m_currentIndex) {
-            nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
-        }
+        while (nextIdx == m_currentIndex) nextIdx = QRandomGenerator::global()->bounded(m_playlist.size());
         m_currentIndex = nextIdx;
     } else {
         m_currentIndex--;
@@ -191,8 +190,7 @@ void PlayerController::pause() {
         if (m_audioSink) m_audioSink->suspend();
         libvlc_media_player_pause(m_vlcPlayer);
         m_isPlaying = false;
-        m_ticker->stop();
-        m_visTicker->stop();
+        m_ticker->stop(); m_visTicker->stop();
         emit isPlayingChanged();
     }
 }
@@ -201,31 +199,30 @@ void PlayerController::stop() {
     if (m_vlcPlayer) {
         libvlc_media_player_stop(m_vlcPlayer);
         m_isPlaying = false;
-        m_ticker->stop();
-        m_visTicker->stop();
+        m_ticker->stop(); m_visTicker->stop();
         m_position = 0;
         QVariantList empty;
         for(int i = 0; i < 25; i++) { empty.append(10.0); m_smoothedSpectrum[i] = 10.0; }
         m_spectrum = empty;
         emit spectrumChanged();
         if (m_audioSink) m_audioSink->stop();
-        emit isPlayingChanged();
-        emit positionChanged();
-        emit timeTextChanged();
+        emit isPlayingChanged(); emit positionChanged(); emit timeTextChanged();
     }
 }
 
-void PlayerController::seek(qint64 ms) {
+void PlayerController::seek(qreal ms) {
+    if (std::isnan(ms) || std::isinf(ms)) return;
     if (m_vlcPlayer) {
-        libvlc_media_player_set_time(m_vlcPlayer, ms);
-        m_position = ms;
+        libvlc_media_player_set_time(m_vlcPlayer, static_cast<qint64>(ms));
+        m_position = static_cast<qint64>(ms);
         emit positionChanged();
     }
 }
 
-void PlayerController::changeVolume(int vol) {
-    m_volume = vol;
-    if (m_audioSink) m_audioSink->setVolume(vol / 100.0f);
+void PlayerController::changeVolume(qreal vol) {
+    if (std::isnan(vol) || std::isinf(vol)) return;
+    m_volume = static_cast<int>(vol);
+    if (m_audioSink) m_audioSink->setVolume(m_volume / 100.0f);
     emit volumeChanged();
 }
 
@@ -233,9 +230,16 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
     if (m_isPlaying) {
         m_isPlaying = false;
         if (m_vlcPlayer) libvlc_media_player_stop(m_vlcPlayer);
-        m_ticker->stop();
-        m_visTicker->stop();
+        m_ticker->stop(); m_visTicker->stop();
     }
+
+    m_currentTitle = fileUrl.fileName();
+    m_currentArtist = "Unknown Artist";
+    m_currentAlbum = "Unknown Album";
+    m_currentArt = "";
+    m_artPending = false;
+    emit metaDataChanged();
+
     libvlc_media_t *media = nullptr;
     if (fileUrl.scheme() == "cdda") {
         QString drive = fileUrl.path();
@@ -254,9 +258,75 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
         media = libvlc_media_new_location(m_vlcInstance, urlBytes.constData());
         m_currentSource = fileUrl.fileName();
     }
+
     if (media) {
+        libvlc_media_parse_flag_t parseFlags = (libvlc_media_parse_flag_t)(libvlc_media_parse_local | libvlc_media_fetch_local);
+        libvlc_media_parse_with_options(media, parseFlags, -1);
+
+        int timeout = 0;
+        while (timeout < 25) {
+            libvlc_media_parsed_status_t status = libvlc_media_get_parsed_status(media);
+            if (status == libvlc_media_parsed_status_done || status == libvlc_media_parsed_status_failed) break;
+            QThread::msleep(20);
+            timeout++;
+        }
+
+        char* title = libvlc_media_get_meta(media, libvlc_meta_Title);
+        char* artist = libvlc_media_get_meta(media, libvlc_meta_Artist);
+        char* album = libvlc_media_get_meta(media, libvlc_meta_Album);
+        char* art = libvlc_media_get_meta(media, libvlc_meta_ArtworkURL);
+
+        if (title) { m_currentTitle = QString::fromUtf8(title); libvlc_free(title); }
+        if (artist) { m_currentArtist = QString::fromUtf8(artist); libvlc_free(artist); }
+        if (album) { m_currentAlbum = QString::fromUtf8(album); libvlc_free(album); }
+        if (art) {
+            m_currentArt = QString::fromUtf8(art);
+            if (m_currentArt.startsWith("attachment://")) m_artPending = true;
+            libvlc_free(art);
+        }
+
+        bool hasAttachment = m_currentArt.startsWith("attachment://");
+
+        if (m_currentArt.isEmpty() || hasAttachment) {
+            if (fileUrl.isLocalFile()) {
+                QFileInfo fi(fileUrl.toLocalFile());
+                QDir dir = fi.absoluteDir();
+                QString foundArt = "";
+
+                QStringList commonNames = {"cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg"};
+                for (const QString &c : std::as_const(commonNames)) {
+                    if (dir.exists(c)) { foundArt = QUrl::fromLocalFile(dir.absoluteFilePath(c)).toString(); break; }
+                }
+
+                if (foundArt.isEmpty()) {
+                    QStringList allImages = dir.entryList({"*.jpg", "*.jpeg", "*.png"}, QDir::Files);
+                    for (const QString &img : std::as_const(allImages)) {
+                        QString lowerImg = img.toLower();
+                        if (lowerImg.contains("cover") || lowerImg.contains("folder") || lowerImg.contains("front") || lowerImg.contains("art")) {
+                            foundArt = QUrl::fromLocalFile(dir.absoluteFilePath(img)).toString(); break;
+                        }
+                    }
+                    if (foundArt.isEmpty() && !allImages.isEmpty()) {
+                        foundArt = QUrl::fromLocalFile(dir.absoluteFilePath(allImages.first())).toString();
+                    }
+                }
+
+                if (!foundArt.isEmpty()) {
+                    m_currentArt = foundArt;
+                    m_artPending = false;
+                }
+            }
+        }
+
+        if (m_currentArt.isEmpty() || m_currentArt.startsWith("attachment://")) {
+            m_coverFetcher.queueCoverFetch(m_currentArtist, m_currentAlbum, m_currentTitle);
+        }
+
+        emit metaDataChanged();
+
         libvlc_media_player_set_media(m_vlcPlayer, media);
         libvlc_media_release(media);
+
         if (m_audioSink) {
             m_audioSink->stop();
             m_audioSink->setBufferSize(88200);
@@ -270,6 +340,23 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
 
 void PlayerController::updateInterface() {
     if (m_vlcPlayer) {
+        if (m_artPending && m_isPlaying) {
+            libvlc_media_t *media = libvlc_media_player_get_media(m_vlcPlayer);
+            if (media) {
+                char* art = libvlc_media_get_meta(media, libvlc_meta_ArtworkURL);
+                if (art) {
+                    QString newArt = QString::fromUtf8(art);
+                    if (newArt.startsWith("file://")) {
+                        m_currentArt = newArt;
+                        m_artPending = false;
+                        emit metaDataChanged();
+                    }
+                    libvlc_free(art);
+                }
+                libvlc_media_release(media);
+            }
+        }
+
         libvlc_state_t state = libvlc_media_player_get_state(m_vlcPlayer);
         if (state == libvlc_Ended) {
             if (m_isPlaying) {
@@ -313,9 +400,9 @@ void PlayerController::processAudio(const void* samples, unsigned count) {
     if (m_fftBuffer.size() > 4096) m_fftBuffer.erase(m_fftBuffer.begin(), m_fftBuffer.begin() + (m_fftBuffer.size() - 4096));
 }
 
-// ===============================================
-// HIGH SENSITIVITY LOGARITHMIC VISUALIZER
-// ===============================================
+// ==========================================
+// FIXED: SMOOTHER & LESS SENSITIVE VISUALIZER
+// ==========================================
 void PlayerController::updateVisualizer() {
     if (!m_isPlaying) return;
     std::vector<int16_t> localBuffer;
@@ -336,7 +423,6 @@ void PlayerController::updateVisualizer() {
     double logMaxFreq = std::log10(16000.0);
 
     for (int i = 0; i < 25; i++) {
-        // Calculate frequency bounds for this bar
         double lowFreq = std::pow(10.0, logMinFreq + (logMaxFreq - logMinFreq) * i / 25.0);
         double highFreq = std::pow(10.0, logMinFreq + (logMaxFreq - logMinFreq) * (i + 1) / 25.0);
 
@@ -350,31 +436,32 @@ void PlayerController::updateVisualizer() {
             if (mag > peakMag) peakMag = mag;
         }
 
-        double db = 0.0;
-        if (peakMag > 0.0) {
-            // Reference level for 16-bit audio
+        double db = -100.0;
+        if (peakMag > 0.0001) {
             db = 20.0 * std::log10(peakMag / 32768.0);
         }
 
-        // --- NEW NONLINEAR SCALING LOGIC ---
-        // Floor at -50dB for high sensitivity to quiet details
-        double minDb = -50.0;
-        double normalized = (db - minDb) / (-minDb); // 0.0 to 1.0 range
-        if (normalized < 0.0) normalized = 0.0;
+        // 1. Raised Noise Floor: Ignores quiet static and background hums
+        double minDb = -35.0;
+        double normalized = (db - minDb) / (-minDb);
+        if (std::isnan(normalized) || std::isinf(normalized) || normalized < 0.0) normalized = 0.0;
 
-        // Power scaling (0.6): This makes the bars "jump" more for low signals
-        // but slows down their approach to the top.
-        double powerScaled = std::pow(normalized, 0.6);
+        // 2. Power Curve 1.2: Suppresses low jumps, enhances strong beats
+        double powerScaled = std::pow(normalized, 1.2);
+        if (std::isnan(powerScaled) || std::isinf(powerScaled)) powerScaled = 0.0;
         if (powerScaled > 1.0) powerScaled = 1.0;
 
         double targetHeight = 10.0 + (powerScaled * 180.0);
+        if (std::isnan(targetHeight) || std::isinf(targetHeight)) targetHeight = 10.0;
 
-        // GRAVITY TUNE: Snappy rise, natural fall
+        // 3. Elegant Smoothing: Bars don't snap or teleport instantly anymore
         if (targetHeight > m_smoothedSpectrum[i]) {
-            m_smoothedSpectrum[i] += 0.75 * (targetHeight - m_smoothedSpectrum[i]);
+            m_smoothedSpectrum[i] += 0.35 * (targetHeight - m_smoothedSpectrum[i]); // Smooth Rise
         } else {
-            m_smoothedSpectrum[i] += 0.20 * (targetHeight - m_smoothedSpectrum[i]);
+            m_smoothedSpectrum[i] += 0.15 * (targetHeight - m_smoothedSpectrum[i]); // Smooth Fall
         }
+
+        if (std::isnan(m_smoothedSpectrum[i]) || std::isinf(m_smoothedSpectrum[i])) m_smoothedSpectrum[i] = 10.0;
         newSpectrum.append(m_smoothedSpectrum[i]);
     }
     m_spectrum = newSpectrum;

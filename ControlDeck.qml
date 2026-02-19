@@ -6,53 +6,49 @@ Rectangle {
     id: root
     height: 90
     color: rootWindow.bgPanel
+    clip: true
 
     property var player
     property var settings
     property var appFileDialog
     property bool isMiniPlayer: false
 
+    // Mathematical Luminance Detector: Checks if your accent color is too bright
+    property bool isAccentLight: settings && settings.accentColor ? ((settings.accentColor.r * 0.299 + settings.accentColor.g * 0.587 + settings.accentColor.b * 0.114) > 0.6) : false
+
     signal toggleMiniPlayer()
 
     property bool isHovered: deckHover.hovered || trackMouse.pressed || volMouse.pressed
 
-    HoverHandler {
-        id: deckHover
-    }
+    HoverHandler { id: deckHover }
 
     Connections {
         target: player
         function onTrackEnded() {
-            if (settings.autoPlay) {
-                player.autoPlayNext()
-            }
+            if (settings && settings.autoPlay) player.autoPlayNext()
         }
     }
 
     Component.onCompleted: {
-        player.changeVolume(settings.savedVolume)
+        if (settings && settings.savedVolume !== undefined) {
+            player.changeVolume(settings.savedVolume)
+        }
     }
 
     MouseArea {
         anchors.fill: parent
         enabled: root.isMiniPlayer
-        onPressed: {
-            rootWindow.startSystemMove()
-        }
+        onPressed: { rootWindow.startSystemMove() }
     }
 
     Rectangle {
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 1
-        color: rootWindow.borderCol
+        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+        height: 1; color: rootWindow.borderCol
     }
 
     RowLayout {
         anchors.fill: parent
 
-        // Fluid Margins
         anchors.margins: root.isMiniPlayer ? 12 : 10
         anchors.leftMargin: root.isMiniPlayer ? 15 : 20
         anchors.rightMargin: root.isMiniPlayer ? 15 : 20
@@ -61,9 +57,6 @@ Rectangle {
         Behavior on spacing { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
         Behavior on anchors.margins { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
-        // ==========================================
-        // LEFT COLUMN: Now Playing Info
-        // ==========================================
         RowLayout {
             Layout.preferredWidth: root.isMiniPlayer ? 190 : 250
             Layout.fillWidth: true
@@ -76,17 +69,20 @@ Rectangle {
                 width: root.isMiniPlayer ? 40 : 48
                 height: root.isMiniPlayer ? 40 : 48
                 radius: 6
-                color: rootWindow.borderCol
+                color: rootWindow.bgSidebar
+                border.color: rootWindow.borderCol
+                border.width: 1
+                clip: true
 
                 Behavior on width { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                 Behavior on height { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
                 Image {
                     anchors.centerIn: parent
-                    source: "logo.png" // FIXED NATIVE PATH
-                    width: root.isMiniPlayer ? 24 : 32
-                    height: root.isMiniPlayer ? 24 : 32
-                    fillMode: Image.PreserveAspectFit
+                    source: player.currentArt && !player.currentArt.startsWith("attachment://") ? player.currentArt : "logo.png"
+                    width: (player.currentArt && !player.currentArt.startsWith("attachment://")) ? parent.width : (root.isMiniPlayer ? 24 : 32)
+                    height: (player.currentArt && !player.currentArt.startsWith("attachment://")) ? parent.height : (root.isMiniPlayer ? 24 : 32)
+                    fillMode: (player.currentArt && !player.currentArt.startsWith("attachment://")) ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                     mipmap: true
 
                     Behavior on width { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
@@ -97,24 +93,25 @@ Rectangle {
             ColumnLayout {
                 spacing: 2
                 Text {
-                    text: player.currentSource || "SaberPlayer Ready"
+                    text: player.currentTitle || "SaberPlayer Ready"
                     color: rootWindow.textMain
                     font.bold: true
                     font.pixelSize: root.isMiniPlayer ? 12 : 14
                     elide: Text.ElideRight
                     Layout.fillWidth: true
+                    clip: true
                 }
                 Text {
-                    text: player.isPlaying ? "Now Playing" : "Stopped"
+                    text: player.currentArtist || "Stopped"
                     color: rootWindow.textSub
                     font.pixelSize: root.isMiniPlayer ? 10 : 12
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                    clip: true
                 }
             }
         }
 
-        // ==========================================
-        // CENTER COLUMN: Playback & Scrubber
-        // ==========================================
         ColumnLayout {
             Layout.fillWidth: true
             Layout.maximumWidth: 600
@@ -133,7 +130,7 @@ Rectangle {
                     background: Rectangle { color: "transparent" }
                     contentItem: Text {
                         text: parent.text
-                        color: player.shuffle ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
+                        color: player.shuffle && settings ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
                         font.pixelSize: root.isMiniPlayer ? 14 : 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -177,14 +174,15 @@ Rectangle {
                         implicitWidth: root.isMiniPlayer ? 36 : 42
                         implicitHeight: root.isMiniPlayer ? 36 : 42
                         radius: width / 2
-                        color: parent.hovered ? Qt.lighter(settings.accentColor, 1.1) : settings.accentColor
+                        color: parent.hovered && settings ? Qt.lighter(settings.accentColor, 1.1) : (settings ? settings.accentColor : "grey")
                         Behavior on color { ColorAnimation { duration: 150 } }
                         Behavior on implicitWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                         Behavior on implicitHeight { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: "white"
+                        // FIXED: Dynamic Contrast text based on the Accent Color luminance!
+                        color: root.isAccentLight ? "black" : "white"
                         font.pixelSize: root.isMiniPlayer ? 14 : 18
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -224,7 +222,7 @@ Rectangle {
                     background: Rectangle { color: "transparent" }
                     contentItem: Text {
                         text: parent.text
-                        color: player.repeatMode > 0 ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
+                        color: player.repeatMode > 0 && settings ? settings.accentColor : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
                         font.pixelSize: root.isMiniPlayer ? 14 : 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -238,7 +236,13 @@ Rectangle {
                 spacing: 12
 
                 Text {
-                    text: trackMouse.pressed ? player.formatTime(trackSlider.visualProgress * player.duration) : (player.formattedTime.split(" / ")[0] || "00:00")
+                    text: {
+                        if (trackMouse.pressed) {
+                            var t = trackSlider.visualProgress * (player.duration || 0);
+                            return player.formatTime(Number.isNaN(t) ? 0 : t);
+                        }
+                        return player.formattedTime ? (player.formattedTime.split(" / ")[0] || "00:00") : "00:00";
+                    }
                     color: rootWindow.textSub
                     font.family: "Consolas"
                     font.pixelSize: 11
@@ -250,8 +254,8 @@ Rectangle {
                     Layout.fillWidth: true
                     height: 20
 
-                    property real progress: (player.duration > 0) ? (player.position / player.duration) : 0
-                    property real visualProgress: trackMouse.pressed ? Math.max(0, Math.min(1, trackMouse.mouseX / width)) : progress
+                    property real progress: (player && player.progress !== undefined) ? player.progress : 0.0
+                    property real visualProgress: trackMouse.pressed ? Math.max(0, Math.min(1, width > 0 ? trackMouse.mouseX / width : 0.0)) : progress
 
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
@@ -260,20 +264,23 @@ Rectangle {
                         radius: 2
                         color: rootWindow.borderCol
                         Rectangle {
-                            width: trackSlider.visualProgress * parent.width
+                            property real safeWidth: trackSlider.visualProgress * parent.width
+                            width: Number.isNaN(safeWidth) ? 0 : safeWidth
                             height: parent.height
-                            color: settings.accentColor
+                            color: settings && settings.accentColor ? settings.accentColor : "white"
                             radius: 2
                         }
                     }
 
                     Rectangle {
-                        x: (trackSlider.visualProgress * parent.width) - width / 2
+                        property real safeX: (trackSlider.visualProgress * parent.width) - width / 2
+                        x: Number.isNaN(safeX) ? 0 : safeX
+
                         anchors.verticalCenter: parent.verticalCenter
                         width: trackMouse.pressed || trackMouse.containsMouse ? 12 : 0
                         height: width
                         radius: width / 2
-                        color: settings.accentColor
+                        color: settings && settings.accentColor ? settings.accentColor : "white"
                         Behavior on width { NumberAnimation { duration: 100 } }
                     }
 
@@ -283,14 +290,15 @@ Rectangle {
                         hoverEnabled: true
                         onReleased: {
                             if (player.duration > 0) {
-                                player.seek(Math.floor(trackSlider.visualProgress * player.duration))
+                                var target = trackSlider.visualProgress * player.duration;
+                                player.seek(Number.isNaN(target) ? 0 : target);
                             }
                         }
                     }
                 }
 
                 Text {
-                    text: player.formattedTime.split(" / ")[1] || "00:00"
+                    text: player.formattedTime ? (player.formattedTime.split(" / ")[1] || "00:00") : "00:00"
                     color: rootWindow.textSub
                     font.family: "Consolas"
                     font.pixelSize: 11
@@ -299,9 +307,6 @@ Rectangle {
             }
         }
 
-        // ==========================================
-        // RIGHT COLUMN: Compact Volume Control
-        // ==========================================
         RowLayout {
             Layout.preferredWidth: root.isMiniPlayer ? 140 : 250
             Layout.fillWidth: true
@@ -310,16 +315,14 @@ Rectangle {
 
             Behavior on Layout.preferredWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
-            Item {
-                Layout.fillWidth: true
-            }
+            Item { Layout.fillWidth: true }
 
             Button {
                 text: player.volume === 0 ? "🔇" : "🔊"
                 onClicked: {
                     let newVol = player.volume > 0 ? 0 : 50
                     player.changeVolume(newVol)
-                    settings.savedVolume = newVol
+                    if(settings) settings.savedVolume = newVol
                 }
                 background: Rectangle { color: "transparent" }
                 contentItem: Text {
@@ -338,12 +341,12 @@ Rectangle {
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                 Behavior on Layout.maximumWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
-                property real visualVolume: player.volume / 100
+                property real visualVolume: (player && player.volume !== undefined) ? player.volume / 100.0 : 0.5
 
                 function updateVol(mouseXPos) {
-                    let newVol = Math.max(0, Math.min(1, mouseXPos / width)) * 100
-                    player.changeVolume(Math.floor(newVol))
-                    settings.savedVolume = Math.floor(newVol)
+                    let newVol = Math.max(0, Math.min(1, width > 0 ? mouseXPos / width : 0.0)) * 100
+                    player.changeVolume(Number.isNaN(newVol) ? 0 : Math.floor(newVol))
+                    if(settings) settings.savedVolume = Math.floor(newVol)
                 }
 
                 Rectangle {
@@ -353,7 +356,8 @@ Rectangle {
                     radius: 2
                     color: rootWindow.borderCol
                     Rectangle {
-                        width: volSlider.visualVolume * parent.width
+                        property real safeWidth: volSlider.visualVolume * parent.width
+                        width: Number.isNaN(safeWidth) ? 0 : safeWidth
                         height: parent.height
                         color: rootWindow.textSub
                         radius: 2
@@ -361,7 +365,8 @@ Rectangle {
                 }
 
                 Rectangle {
-                    x: (volSlider.visualVolume * parent.width) - width / 2
+                    property real safeX: (volSlider.visualVolume * parent.width) - width / 2
+                    x: Number.isNaN(safeX) ? 0 : safeX
                     anchors.verticalCenter: parent.verticalCenter
                     width: volMouse.pressed || volMouse.containsMouse ? 12 : 0
                     height: width
@@ -381,9 +386,7 @@ Rectangle {
 
             Button {
                 text: root.isMiniPlayer ? "🗖" : "🗗"
-                onClicked: {
-                    root.toggleMiniPlayer()
-                }
+                onClicked: { root.toggleMiniPlayer() }
                 background: Rectangle { color: "transparent" }
                 contentItem: Text {
                     text: parent.text

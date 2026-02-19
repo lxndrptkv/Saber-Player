@@ -5,7 +5,7 @@ project(SaberPlayer VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Fixed: Ask for QuickControls2 AND Multimedia
-find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent QuickControls2 Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent QuickControls2 Multimedia Network)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -35,6 +35,7 @@ qt_add_qml_module(appSaberPlayer
         SOURCES cdmanager.h cdmanager.cpp
         RESOURCES
                 logo.png
+                SOURCES coverfetcher.h coverfetcher.cpp
 )
 
 # Setup VLC SDK Paths
