@@ -36,6 +36,7 @@ qt_add_qml_module(appSaberPlayer
         RESOURCES
                 logo.png
                 SOURCES coverfetcher.h coverfetcher.cpp
+                SOURCES vlcengine.h vlcengine.cpp
 )
 
 # Setup VLC SDK Paths

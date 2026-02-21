@@ -1,4 +1,5 @@
 #include "playercontroller.h"
+#include "vlcengine.h" // Hook into the new asynchronous loader
 #include <cmath>
 #include <complex>
 #include <QRandomGenerator>
@@ -43,18 +44,8 @@ void cb_audio_play(void *data, const void *samples, unsigned count, int64_t pts)
 }
 
 PlayerController::PlayerController(QObject *parent)
-    : QObject(parent), m_isPlaying(false), m_position(0), m_duration(0), m_volume(50), m_shuffle(false), m_repeatMode(0), m_currentIndex(-1), m_artPending(false)
+    : QObject(parent), m_vlcInstance(nullptr), m_vlcPlayer(nullptr), m_isPlaying(false), m_position(0), m_duration(0), m_volume(50), m_shuffle(false), m_repeatMode(0), m_currentIndex(-1), m_artPending(false), m_engineReady(false)
 {
-    const char * const vlc_args[] = {
-        "--intf=dummy",
-        "--ignore-config",
-        "--quiet",
-        "--no-video",
-        "--no-sub-autodetect-file"
-    };
-    m_vlcInstance = libvlc_new(sizeof(vlc_args) / sizeof(vlc_args[0]), vlc_args);
-    m_vlcPlayer = libvlc_media_player_new(m_vlcInstance);
-
     m_ticker = new QTimer(this);
     connect(m_ticker, &QTimer::timeout, this, &PlayerController::updateInterface);
 
@@ -83,8 +74,33 @@ PlayerController::PlayerController(QObject *parent)
     m_audioSink->setBufferSize(88200);
     m_audioOutput = m_audioSink->start();
 
+    // ==========================================
+    // ASYNCHRONOUS ENGINE BINDING
+    // ==========================================
+    VlcEngine *engine = VlcEngine::instance();
+    if (engine->isReady()) {
+        onEngineReady();
+    } else {
+        connect(engine, &VlcEngine::engineReady, this, &PlayerController::onEngineReady);
+    }
+}
+
+void PlayerController::onEngineReady() {
+    VlcEngine *engine = VlcEngine::instance();
+    m_vlcInstance = engine->core();
+    m_vlcPlayer = libvlc_media_player_new(m_vlcInstance);
+
     libvlc_audio_set_format_callbacks(m_vlcPlayer, cb_audio_setup, nullptr);
     libvlc_audio_set_callbacks(m_vlcPlayer, cb_audio_play, nullptr, nullptr, nullptr, nullptr, this);
+
+    m_engineReady = true;
+    emit engineReadyChanged();
+
+    // If a user tried to play a song before the backend finished loading, play it instantly now!
+    if (!m_pendingLoadUrl.isEmpty()) {
+        loadFile(m_pendingLoadUrl);
+        m_pendingLoadUrl.clear();
+    }
 }
 
 PlayerController::~PlayerController() {
@@ -92,7 +108,7 @@ PlayerController::~PlayerController() {
         libvlc_media_player_stop(m_vlcPlayer);
         libvlc_media_player_release(m_vlcPlayer);
     }
-    if (m_vlcInstance) libvlc_release(m_vlcInstance);
+    // We intentionally do NOT release m_vlcInstance here anymore. VlcEngine owns it safely in memory!
 }
 
 bool PlayerController::isPlaying() const { return m_isPlaying; }
@@ -132,9 +148,6 @@ QString PlayerController::formatMilliseconds(qint64 ms) const {
     return QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
 }
 
-// ==========================================
-// QUEUE LOGIC
-// ==========================================
 void PlayerController::enqueueTrack(const QString &url, const QString &title, const QString &artist, const QString &album, const QString &artUrl) {
     QVariantMap track;
     track["url"] = url;
@@ -166,14 +179,12 @@ void PlayerController::playTrackList(const QVariantList &trackUrls, int startInd
 
 void PlayerController::autoPlayNext() {
     if (m_repeatMode == 2) { seek(0); play(); return; }
-    // If queue has tracks, intercept the playlist automatically!
     if (!m_queue.isEmpty() || !m_playlist.isEmpty()) {
         playNext();
     }
 }
 
 void PlayerController::playNext() {
-    // INTERCEPT: If the queue has a song, play it immediately and ignore the main playlist
     if (!m_queue.isEmpty()) {
         QVariantMap nextTrack = m_queue.takeFirst().toMap();
         emit queueChanged();
@@ -280,7 +291,15 @@ void PlayerController::loadFile(const QUrl &fileUrl) {
     m_currentAlbum = "Unknown Album";
     m_currentArt = "";
     m_artPending = false;
+
+    // UI responds IMMEDIATELY before VLC parses
     emit metaDataChanged();
+
+    // DEFER PARSING IF ENGINE ISN'T LOADED
+    if (!m_engineReady) {
+        m_pendingLoadUrl = fileUrl;
+        return;
+    }
 
     libvlc_media_t *media = nullptr;
     if (fileUrl.scheme() == "cdda") {

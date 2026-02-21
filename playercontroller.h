@@ -39,11 +39,11 @@ class PlayerController : public QObject
     Q_PROPERTY(QString currentAlbum READ currentAlbum NOTIFY metaDataChanged)
     Q_PROPERTY(QString currentArt READ currentArt NOTIFY metaDataChanged)
 
-    // ==========================================
-    // QUEUE SYSTEM PROPERTIES
-    // ==========================================
     Q_PROPERTY(QVariantList currentQueue READ currentQueue NOTIFY queueChanged)
     Q_PROPERTY(bool isQueueOpen READ isQueueOpen WRITE setIsQueueOpen NOTIFY isQueueOpenChanged)
+
+    // NEW: UI Indicator that the backend has successfully launched
+    Q_PROPERTY(bool engineReady READ engineReady NOTIFY engineReadyChanged)
 
 public:
     explicit PlayerController(QObject *parent = nullptr);
@@ -73,6 +73,8 @@ public:
     bool isQueueOpen() const { return m_isQueueOpen; }
     void setIsQueueOpen(bool open) { if (m_isQueueOpen != open) { m_isQueueOpen = open; emit isQueueOpenChanged(); } }
 
+    bool engineReady() const { return m_engineReady; }
+
     Q_INVOKABLE void seek(qreal ms);
     Q_INVOKABLE void changeVolume(qreal vol);
     Q_INVOKABLE QString formatTime(qreal ms) const;
@@ -82,7 +84,6 @@ public:
     Q_INVOKABLE void playPrevious();
     Q_INVOKABLE void playTrackList(const QVariantList &trackUrls, int startIndex);
 
-    // Queue Controls
     Q_INVOKABLE void enqueueTrack(const QString &url, const QString &title, const QString &artist, const QString &album, const QString &artUrl);
     Q_INVOKABLE void removeQueueTrack(int index);
     Q_INVOKABLE void clearQueue();
@@ -109,10 +110,12 @@ signals:
     void metaDataChanged();
     void queueChanged();
     void isQueueOpenChanged();
+    void engineReadyChanged();
 
 private slots:
     void updateInterface();
     void updateVisualizer();
+    void onEngineReady(); // NEW: Triggered when background worker finishes
 
 private:
     libvlc_instance_t *m_vlcInstance;
@@ -144,6 +147,9 @@ private:
 
     QVariantList m_queue;
     bool m_isQueueOpen = false;
+
+    bool m_engineReady = false;
+    QUrl m_pendingLoadUrl;
 
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_audioOutput = nullptr;
