@@ -45,7 +45,13 @@ void cb_audio_play(void *data, const void *samples, unsigned count, int64_t pts)
 PlayerController::PlayerController(QObject *parent)
     : QObject(parent), m_isPlaying(false), m_position(0), m_duration(0), m_volume(50), m_shuffle(false), m_repeatMode(0), m_currentIndex(-1), m_artPending(false)
 {
-    const char * const vlc_args[] = { "--no-video" };
+    const char * const vlc_args[] = {
+        "--intf=dummy",
+        "--ignore-config",
+        "--quiet",
+        "--no-video",
+        "--no-sub-autodetect-file"
+    };
     m_vlcInstance = libvlc_new(sizeof(vlc_args) / sizeof(vlc_args[0]), vlc_args);
     m_vlcPlayer = libvlc_media_player_new(m_vlcInstance);
 
@@ -126,6 +132,32 @@ QString PlayerController::formatMilliseconds(qint64 ms) const {
     return QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
 }
 
+// ==========================================
+// QUEUE LOGIC
+// ==========================================
+void PlayerController::enqueueTrack(const QString &url, const QString &title, const QString &artist, const QString &album, const QString &artUrl) {
+    QVariantMap track;
+    track["url"] = url;
+    track["title"] = title;
+    track["artist"] = artist;
+    track["album"] = album;
+    track["artUrl"] = artUrl;
+    m_queue.append(track);
+    emit queueChanged();
+}
+
+void PlayerController::removeQueueTrack(int index) {
+    if (index >= 0 && index < m_queue.size()) {
+        m_queue.removeAt(index);
+        emit queueChanged();
+    }
+}
+
+void PlayerController::clearQueue() {
+    m_queue.clear();
+    emit queueChanged();
+}
+
 void PlayerController::playTrackList(const QVariantList &trackUrls, int startIndex) {
     m_playlist = trackUrls;
     m_currentIndex = startIndex;
@@ -133,12 +165,22 @@ void PlayerController::playTrackList(const QVariantList &trackUrls, int startInd
 }
 
 void PlayerController::autoPlayNext() {
-    if (m_playlist.isEmpty()) return;
     if (m_repeatMode == 2) { seek(0); play(); return; }
-    playNext();
+    // If queue has tracks, intercept the playlist automatically!
+    if (!m_queue.isEmpty() || !m_playlist.isEmpty()) {
+        playNext();
+    }
 }
 
 void PlayerController::playNext() {
+    // INTERCEPT: If the queue has a song, play it immediately and ignore the main playlist
+    if (!m_queue.isEmpty()) {
+        QVariantMap nextTrack = m_queue.takeFirst().toMap();
+        emit queueChanged();
+        loadFile(QUrl(nextTrack["url"].toString()));
+        return;
+    }
+
     if (m_playlist.isEmpty()) return;
     if (m_shuffle) {
         if (m_playlist.size() > 1) {
@@ -400,9 +442,6 @@ void PlayerController::processAudio(const void* samples, unsigned count) {
     if (m_fftBuffer.size() > 4096) m_fftBuffer.erase(m_fftBuffer.begin(), m_fftBuffer.begin() + (m_fftBuffer.size() - 4096));
 }
 
-// ==========================================
-// FIXED: SMOOTHER & LESS SENSITIVE VISUALIZER
-// ==========================================
 void PlayerController::updateVisualizer() {
     if (!m_isPlaying) return;
     std::vector<int16_t> localBuffer;
@@ -441,12 +480,10 @@ void PlayerController::updateVisualizer() {
             db = 20.0 * std::log10(peakMag / 32768.0);
         }
 
-        // 1. Raised Noise Floor: Ignores quiet static and background hums
         double minDb = -35.0;
         double normalized = (db - minDb) / (-minDb);
         if (std::isnan(normalized) || std::isinf(normalized) || normalized < 0.0) normalized = 0.0;
 
-        // 2. Power Curve 1.2: Suppresses low jumps, enhances strong beats
         double powerScaled = std::pow(normalized, 1.2);
         if (std::isnan(powerScaled) || std::isinf(powerScaled)) powerScaled = 0.0;
         if (powerScaled > 1.0) powerScaled = 1.0;
@@ -454,11 +491,10 @@ void PlayerController::updateVisualizer() {
         double targetHeight = 10.0 + (powerScaled * 180.0);
         if (std::isnan(targetHeight) || std::isinf(targetHeight)) targetHeight = 10.0;
 
-        // 3. Elegant Smoothing: Bars don't snap or teleport instantly anymore
         if (targetHeight > m_smoothedSpectrum[i]) {
-            m_smoothedSpectrum[i] += 0.35 * (targetHeight - m_smoothedSpectrum[i]); // Smooth Rise
+            m_smoothedSpectrum[i] += 0.35 * (targetHeight - m_smoothedSpectrum[i]);
         } else {
-            m_smoothedSpectrum[i] += 0.15 * (targetHeight - m_smoothedSpectrum[i]); // Smooth Fall
+            m_smoothedSpectrum[i] += 0.15 * (targetHeight - m_smoothedSpectrum[i]);
         }
 
         if (std::isnan(m_smoothedSpectrum[i]) || std::isinf(m_smoothedSpectrum[i])) m_smoothedSpectrum[i] = 10.0;

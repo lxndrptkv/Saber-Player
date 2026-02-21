@@ -28,6 +28,40 @@ Rectangle {
         }
     }
 
+    Menu {
+        id: trackContextMenu
+        property int trackIndex: -1
+        background: Rectangle {
+            color: rootWindow.bgPanel
+            border.color: rootWindow.borderCol
+            border.width: 1
+            radius: 8
+        }
+        MenuItem {
+            text: "➕ Add to Queue"
+            onTriggered: {
+                if (trackContextMenu.trackIndex >= 0) {
+                    var t = libraryModel.getTrack(trackContextMenu.trackIndex);
+                    player.enqueueTrack(t.url, t.title, t.artist, t.album, t.artUrl);
+                }
+            }
+            contentItem: Text {
+                text: parent.text;
+                color: rootWindow.textMain;
+                font.pixelSize: 14;
+                font.bold: true;
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 10
+            }
+            background: Rectangle {
+                implicitWidth: 180
+                implicitHeight: 40
+                color: parent.highlighted ? libraryRoot.hoverOverlay : "transparent";
+                radius: 6
+            }
+        }
+    }
+
     Rectangle {
         id: notificationToast
         width: Math.max(280, toastText.width + 60)
@@ -294,7 +328,41 @@ Rectangle {
                         }
 
                         Text { text: trackNumber; color: rootWindow.textMain; Layout.preferredWidth: 30 * libraryRoot.uiScale; font.pixelSize: 13 * libraryRoot.uiScale; clip: true }
-                        Text { text: trackName; color: rootWindow.textMain; Layout.fillWidth: true; elide: Text.ElideRight; font.pixelSize: 13 * libraryRoot.uiScale; font.family: "Segoe UI"; clip: true }
+
+                        // =========================================================
+                        // NEW: PATH, FILETYPE, AND FILENAME DETAILS
+                        // =========================================================
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                text: trackName;
+                                color: rootWindow.textMain;
+                                Layout.fillWidth: true;
+                                elide: Text.ElideRight;
+                                font.pixelSize: 13 * libraryRoot.uiScale;
+                                font.family: "Segoe UI";
+                                clip: true
+                            }
+
+                            Text {
+                                text: {
+                                    if (trackUrl.startsWith("cdda://")) return "CD AUDIO  •  " + trackUrl;
+                                    // Decodes URL spaces (%20) and strips "file:///"
+                                    var path = decodeURIComponent(trackUrl.replace(/^(file:\/{2,3})/, ""));
+                                    var ext = path.substring(path.lastIndexOf('.') + 1).toUpperCase();
+                                    return ext + "  •  " + path;
+                                }
+                                color: rootWindow.textSub
+                                opacity: 0.6
+                                Layout.fillWidth: true
+                                elide: Text.ElideMiddle // Truncates the middle so you always see Drive Letter and Filename
+                                font.pixelSize: 10 * libraryRoot.uiScale
+                                clip: true
+                            }
+                        }
+
                         Text { text: trackDuration; color: rootWindow.textSub; Layout.preferredWidth: 60 * libraryRoot.uiScale; visible: libraryRoot.showLength; font.pixelSize: 12 * libraryRoot.uiScale; font.family: "Consolas"; clip: true }
                         Text { text: trackArtist; color: rootWindow.textSub; Layout.preferredWidth: 150 * libraryRoot.uiScale; visible: libraryRoot.showArtist; elide: Text.ElideRight; font.pixelSize: 12 * libraryRoot.uiScale; clip: true }
                         Text { text: trackSize; color: rootWindow.textSub; Layout.preferredWidth: 60 * libraryRoot.uiScale; visible: libraryRoot.showSize; font.pixelSize: 12 * libraryRoot.uiScale; clip: true }
@@ -304,7 +372,21 @@ Rectangle {
                         id: ma
                         anchors.fill: parent
                         hoverEnabled: true
-                        onDoubleClicked: player.playTrackList(libraryModel.getTrackUrls(), index)
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                trackContextMenu.trackIndex = index;
+                                var pos = ma.mapToItem(libraryRoot, mouse.x, mouse.y);
+                                trackContextMenu.x = pos.x;
+                                trackContextMenu.y = pos.y;
+                                trackContextMenu.open();
+                            }
+                        }
+                        onDoubleClicked: (mouse) => {
+                            if (mouse.button === Qt.LeftButton) {
+                                player.playTrackList(libraryModel.getTrackUrls(), index);
+                            }
+                        }
                     }
                 }
             }
@@ -368,12 +450,27 @@ Rectangle {
                             Item { Layout.fillHeight: true }
                         }
                     }
+
                     MouseArea {
                         id: gridMa
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onDoubleClicked: player.playTrackList(libraryModel.getTrackUrls(), index)
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                trackContextMenu.trackIndex = index;
+                                var pos = gridMa.mapToItem(libraryRoot, mouse.x, mouse.y);
+                                trackContextMenu.x = pos.x;
+                                trackContextMenu.y = pos.y;
+                                trackContextMenu.open();
+                            }
+                        }
+                        onDoubleClicked: (mouse) => {
+                            if (mouse.button === Qt.LeftButton) {
+                                player.playTrackList(libraryModel.getTrackUrls(), index);
+                            }
+                        }
                     }
                 }
             }

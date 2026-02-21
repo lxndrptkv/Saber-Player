@@ -13,7 +13,6 @@ Rectangle {
     property var appFileDialog
     property bool isMiniPlayer: false
 
-    // Mathematical Luminance Detector: Checks if your accent color is too bright
     property bool isAccentLight: settings && settings.accentColor ? ((settings.accentColor.r * 0.299 + settings.accentColor.g * 0.587 + settings.accentColor.b * 0.114) > 0.6) : false
 
     signal toggleMiniPlayer()
@@ -44,6 +43,182 @@ Rectangle {
     Rectangle {
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         height: 1; color: rootWindow.borderCol
+    }
+
+    Popup {
+        id: queuePopup
+        parent: Overlay.overlay
+
+        x: Math.max(0, rootWindow.width - width - 20)
+        y: Math.max(0, rootWindow.height - root.height - height - 10)
+
+        width: 340
+        height: Math.min(500, rootWindow.height * 0.7)
+
+        visible: player && player.isQueueOpen
+        onClosed: if(player) player.isQueueOpen = false
+        padding: 0
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 250 }
+            NumberAnimation { property: "y"; from: queuePopup.y + 40; to: queuePopup.y; duration: 250; easing.type: Easing.OutQuint }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 200 }
+            NumberAnimation { property: "y"; from: queuePopup.y; to: queuePopup.y + 20; duration: 200; easing.type: Easing.InQuad }
+        }
+
+        background: Rectangle {
+            color: rootWindow.bgPanel
+            border.color: rootWindow.borderCol
+            border.width: 1
+            radius: 12
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 15
+            spacing: 10
+
+            Text {
+                text: "Up Next"
+                color: rootWindow.textMain
+                font.bold: true
+                font.pixelSize: 18
+                font.family: "Segoe UI"
+            }
+
+            ListView {
+                id: queueList
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(contentHeight, parent.height * 0.45)
+                Layout.maximumHeight: parent.height * 0.45
+                clip: true
+                spacing: 8
+                model: player ? player.currentQueue : []
+
+                delegate: Rectangle {
+                    width: ListView.view.width
+                    height: 50
+
+                    // FIXED: Using HoverHandler instead of MouseArea so clicks pass through to the button!
+                    color: queueHover.hovered ? (isDarkTheme ? "#22ffffff" : "#11000000") : "transparent"
+                    radius: 6
+
+                    property bool isDarkTheme: (rootWindow.bgPanel.r + rootWindow.bgPanel.g + rootWindow.bgPanel.b) / 3 < 0.6
+
+                    HoverHandler { id: queueHover }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        spacing: 10
+
+                        Rectangle {
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
+                            radius: 4
+                            color: rootWindow.bgSidebar
+                            clip: true
+                            Image {
+                                anchors.centerIn: parent
+                                source: modelData.artUrl && !modelData.artUrl.startsWith("attachment://") ? modelData.artUrl : "logo.png"
+                                width: parent.width; height: parent.height
+                                fillMode: Image.PreserveAspectCrop
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: modelData.title; color: rootWindow.textMain; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; font.pixelSize: 13 }
+                            Text { text: modelData.artist; color: settings.accentColor; elide: Text.ElideRight; Layout.fillWidth: true; font.pixelSize: 11 }
+                        }
+
+                        Button {
+                            text: "✕"
+                            background: Rectangle { color: "transparent" }
+                            contentItem: Text { text: parent.text; color: parent.hovered ? "#ff4444" : rootWindow.textSub; font.pixelSize: 16 }
+                            onClicked: player.removeQueueTrack(index)
+                        }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: rootWindow.borderCol; visible: player && player.currentQueue.length > 0 }
+
+            Text {
+                text: "More from " + (player && player.currentAlbum ? player.currentAlbum : "this artist")
+                color: rootWindow.textMain
+                font.bold: true
+                font.pixelSize: 14
+                visible: suggestionsList.count > 0
+            }
+
+            ListView {
+                id: suggestionsList
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 8
+                model: libraryModel && player ? libraryModel.getAlbumTracks(player.currentAlbum) : []
+
+                delegate: Rectangle {
+                    width: ListView.view.width
+                    height: 50
+
+                    // FIXED: HoverHandler for visual effects
+                    color: sugHover.hovered ? (isDarkTheme ? "#22ffffff" : "#11000000") : "transparent"
+                    radius: 6
+
+                    property bool isDarkTheme: (rootWindow.bgPanel.r + rootWindow.bgPanel.g + rootWindow.bgPanel.b) / 3 < 0.6
+
+                    HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
+
+                    // Make the entire row clickable to add to queue
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: player.enqueueTrack(modelData.url, modelData.title, modelData.artist, modelData.album, modelData.artUrl)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 5
+                        spacing: 10
+
+                        Rectangle {
+                            Layout.preferredWidth: 40
+                            Layout.preferredHeight: 40
+                            radius: 4
+                            color: rootWindow.bgSidebar
+                            clip: true
+                            Image {
+                                anchors.centerIn: parent
+                                source: modelData.artUrl && !modelData.artUrl.startsWith("attachment://") ? modelData.artUrl : "logo.png"
+                                width: parent.width; height: parent.height
+                                fillMode: Image.PreserveAspectCrop
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: modelData.title; color: rootWindow.textMain; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; font.pixelSize: 13 }
+                            Text { text: modelData.artist; color: rootWindow.textSub; elide: Text.ElideRight; Layout.fillWidth: true; font.pixelSize: 11 }
+                        }
+
+                        Text {
+                            text: "➕"
+                            color: sugHover.hovered ? settings.accentColor : rootWindow.textSub
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.rightMargin: 10
+                        }
+                    }
+                }
+            }
+            Item { Layout.fillHeight: true; visible: suggestionsList.count === 0 }
+        }
     }
 
     RowLayout {
@@ -181,7 +356,6 @@ Rectangle {
                     }
                     contentItem: Text {
                         text: parent.text
-                        // FIXED: Dynamic Contrast text based on the Accent Color luminance!
                         color: root.isAccentLight ? "black" : "white"
                         font.pixelSize: root.isMiniPlayer ? 14 : 18
                         horizontalAlignment: Text.AlignHCenter
@@ -308,7 +482,7 @@ Rectangle {
         }
 
         RowLayout {
-            Layout.preferredWidth: root.isMiniPlayer ? 140 : 250
+            Layout.preferredWidth: root.isMiniPlayer ? 180 : 280
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignRight
             spacing: 8
@@ -381,6 +555,19 @@ Rectangle {
                     hoverEnabled: true
                     onPressed: { volSlider.updateVol(mouseX) }
                     onPositionChanged: { if (pressed) volSlider.updateVol(mouseX) }
+                }
+            }
+
+            Button {
+                text: "📜"
+                onClicked: { player.isQueueOpen = !player.isQueueOpen }
+                background: Rectangle { radius: 4; color: player && player.isQueueOpen && settings ? settings.accentColor : "transparent" }
+                contentItem: Text {
+                    text: parent.text
+                    color: player && player.isQueueOpen ? "white" : (parent.hovered ? rootWindow.textMain : rootWindow.textSub)
+                    font.pixelSize: 16
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
 

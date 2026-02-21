@@ -14,6 +14,22 @@ Rectangle {
 
     property bool isDarkTheme: (rootWindow.bgPanel.r + rootWindow.bgPanel.g + rootWindow.bgPanel.b) / 3 < 0.6
 
+    // ==========================================
+    // FIXED: AUTO-OPEN QUEUE LOGIC
+    // ==========================================
+    property int lastQueueLength: 0
+
+    Connections {
+        target: player
+        function onQueueChanged() {
+            // Only auto-open if we are on this screen and a song was ADDED (length increased)
+            if (centralRoot.visible && player.currentQueue.length > lastQueueLength && player.currentQueue.length > 0) {
+                player.isQueueOpen = true;
+            }
+            lastQueueLength = player.currentQueue.length;
+        }
+    }
+
     Item {
         anchors.fill: parent
         opacity: player && player.isPlaying ? 1.0 : 0.0
@@ -124,90 +140,8 @@ Rectangle {
             currentIndex: 0
             onCurrentTextChanged: visAnchor = currentText
 
-            background: Rectangle {
-                color: rootWindow.bgPanel;
-                radius: 4;
-                border.color: rootWindow.borderCol
-            }
-            contentItem: Text {
-                text: visCombo.displayText
-                color: rootWindow.textMain
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
-                font.pixelSize: 13
-            }
-            delegate: ItemDelegate {
-                width: visCombo.width
-                contentItem: Text { text: modelData; color: rootWindow.textMain; font.pixelSize: 13 }
-                background: Rectangle { color: parent.highlighted ? (centralRoot.isDarkTheme ? "#33ffffff" : "#11000000") : "transparent" }
-            }
-        }
-    }
-
-    // FIXED: Y-GLIDE IMPLEMENTATION FOR VISUALIZER POSITION
-    Item {
-        id: visualizerContainer
-        width: centralRoot.width
-        height: 120
-        x: 0
-
-        property real targetY: {
-            if (visAnchor === "Top") return 60;
-            if (visAnchor === "Bottom") return centralRoot.height - 120 - 60;
-            return (centralRoot.height - 120) / 2; // Center
-        }
-
-        y: isNaN(targetY) ? 0 : targetY
-        Behavior on y { NumberAnimation { duration: 800; easing.type: Easing.InOutQuint } }
-
-        opacity: player && player.isPlaying ? 1.0 : 0.0
-        Behavior on opacity { NumberAnimation { duration: 800; easing.type: Easing.InOutQuad } }
-
-        Row {
-            anchors.centerIn: parent
-            spacing: settings && settings.visualizerStyle === "Floating Dots" ? 8 : 4
-            height: parent.height
-
-            Repeater {
-                model: player && player.spectrum ? player.spectrum : []
-
-                Item {
-                    width: settings && settings.visualizerStyle === "Floating Dots" ? 8 : 12
-                    height: parent.height
-
-                    Rectangle {
-                        visible: settings && settings.visualizerStyle !== "Floating Dots"
-                        width: parent.width
-
-                        property real safeRectHeight: Math.max(4, modelData)
-                        height: isNaN(safeRectHeight) ? 4 : safeRectHeight
-
-                        color: settings && settings.accentColor ? settings.accentColor : "white"
-                        radius: width / 2
-
-                        anchors.verticalCenter: settings && settings.visualizerStyle === "Mirrored" ? parent.verticalCenter : undefined
-                        anchors.bottom: settings && settings.visualizerStyle === "Bottom Bars" ? parent.bottom : undefined
-
-                        opacity: 0.85
-                        Behavior on color { ColorAnimation { duration: 200 } }
-                    }
-
-                    Rectangle {
-                        visible: settings && settings.visualizerStyle === "Floating Dots"
-                        width: parent.width
-                        height: width
-                        radius: width / 2
-                        color: settings && settings.accentColor ? settings.accentColor : "white"
-
-                        anchors.bottom: parent.bottom
-                        property real safeBottomMargin: Math.max(0, modelData - height)
-                        anchors.bottomMargin: isNaN(safeBottomMargin) ? 0 : safeBottomMargin
-
-                        opacity: 0.9
-                        Behavior on color { ColorAnimation { duration: 200 } }
-                    }
-                }
-            }
+            background: Rectangle { color: rootWindow.bgPanel; radius: 4; border.color: rootWindow.borderCol }
+            contentItem: Text { text: visCombo.displayText; color: rootWindow.textMain; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 13 }
         }
     }
 
@@ -309,6 +243,72 @@ Rectangle {
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                     Behavior on color { ColorAnimation { duration: 300 } }
+                }
+            }
+        }
+    }
+
+    Item {
+        id: visualizerContainer
+        width: centralRoot.width
+        height: 120
+        x: 0
+
+        property real targetY: {
+            if (visAnchor === "Top") return 60;
+            if (visAnchor === "Bottom") return centralRoot.height - 120 - 60;
+            return (centralRoot.height - 120) / 2; // Center
+        }
+
+        y: isNaN(targetY) ? 0 : targetY
+        Behavior on y { NumberAnimation { duration: 800; easing.type: Easing.InOutQuint } }
+
+        opacity: player && player.isPlaying ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: 800; easing.type: Easing.InOutQuad } }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: settings && settings.visualizerStyle === "Floating Dots" ? 8 : 4
+            height: parent.height
+
+            Repeater {
+                model: player && player.spectrum ? player.spectrum : []
+
+                Item {
+                    width: settings && settings.visualizerStyle === "Floating Dots" ? 8 : 12
+                    height: parent.height
+
+                    Rectangle {
+                        visible: settings && settings.visualizerStyle !== "Floating Dots"
+                        width: parent.width
+
+                        property real safeRectHeight: Math.max(4, modelData)
+                        height: isNaN(safeRectHeight) ? 4 : safeRectHeight
+
+                        color: settings && settings.accentColor ? settings.accentColor : "white"
+                        radius: width / 2
+
+                        anchors.verticalCenter: settings && settings.visualizerStyle === "Mirrored" ? parent.verticalCenter : undefined
+                        anchors.bottom: settings && settings.visualizerStyle === "Bottom Bars" ? parent.bottom : undefined
+
+                        opacity: 0.85
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
+
+                    Rectangle {
+                        visible: settings && settings.visualizerStyle === "Floating Dots"
+                        width: parent.width
+                        height: width
+                        radius: width / 2
+                        color: settings && settings.accentColor ? settings.accentColor : "white"
+
+                        anchors.bottom: parent.bottom
+                        property real safeBottomMargin: Math.max(0, modelData - height)
+                        anchors.bottomMargin: isNaN(safeBottomMargin) ? 0 : safeBottomMargin
+
+                        opacity: 0.9
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
                 }
             }
         }

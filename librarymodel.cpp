@@ -77,6 +77,39 @@ QVariantList LibraryModel::getTrackUrls() const {
     return urls;
 }
 
+// ==========================================
+// QML MAP EXTRACTORS FOR THE QUEUE SYSTEM
+// ==========================================
+QVariantMap LibraryModel::getTrack(int index) const {
+    QVariantMap map;
+    if (index >= 0 && index < m_displayTracks.size()) {
+        const Track &t = m_displayTracks[index];
+        map["url"] = t.url;
+        map["title"] = t.name;
+        map["artist"] = t.artist;
+        map["album"] = t.album;
+        map["artUrl"] = t.artUrl;
+    }
+    return map;
+}
+
+QVariantList LibraryModel::getAlbumTracks(const QString &album) const {
+    QVariantList list;
+    if (album.isEmpty() || album == "Unknown Album") return list;
+    for (const Track &t : std::as_const(m_allTracks)) {
+        if (t.album == album) {
+            QVariantMap map;
+            map["title"] = t.name;
+            map["artist"] = t.artist;
+            map["album"] = t.album;
+            map["url"] = t.url;
+            map["artUrl"] = t.artUrl;
+            list.append(map);
+        }
+    }
+    return list;
+}
+
 void LibraryModel::filter(const QString &query) {
     m_currentFilter = query.toLower();
     beginResetModel();
@@ -127,7 +160,6 @@ void LibraryModel::refetchMissingArt() {
     }
 }
 
-// NUCLEAR RESET: Wipes the entire cache and forces a hard rescan of everything
 void LibraryModel::resetLibraryMetadata() {
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/SaberCovers";
     QDir dir(cacheDir);
@@ -186,7 +218,14 @@ void LibraryModel::scanLibrary() {
             endResetModel();
         });
 
-        const char * const vlc_args[] = { "--no-video", "--no-audio" };
+        const char * const vlc_args[] = {
+            "--intf=dummy",
+            "--ignore-config",
+            "--quiet",
+            "--no-video",
+            "--no-audio",
+            "--no-sub-autodetect-file"
+        };
         libvlc_instance_t *vlc = libvlc_new(sizeof(vlc_args) / sizeof(vlc_args[0]), vlc_args);
 
         for (int i = 0; i < initialTracks.size(); ++i) {

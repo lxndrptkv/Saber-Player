@@ -3,6 +3,7 @@
 
 #include <QAbstractListModel>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QUrl>
 #include <QStringList>
 #include <QtQml/qqml.h>
@@ -42,8 +43,12 @@ public:
     Q_INVOKABLE void sortBy(const QString &field);
     Q_INVOKABLE QVariantList getTrackUrls() const;
 
+    // UI Helpers for the Queue System
+    Q_INVOKABLE QVariantMap getTrack(int index) const;
+    Q_INVOKABLE QVariantList getAlbumTracks(const QString &album) const;
+
     Q_INVOKABLE void refetchMissingArt();
-    Q_INVOKABLE void resetLibraryMetadata(); // THE NUCLEAR RESET BUTTON
+    Q_INVOKABLE void resetLibraryMetadata();
 
 signals:
     void isScanningChanged();
