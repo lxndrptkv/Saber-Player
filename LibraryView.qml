@@ -28,36 +28,77 @@ Rectangle {
         }
     }
 
-    Menu {
+    // ==========================================
+    // FIXED & REDESIGNED: PREMIUM CONTEXT MENU
+    // ==========================================
+    Popup {
         id: trackContextMenu
+        parent: libraryRoot // Ensures it coordinates perfectly with the library view
         property int trackIndex: -1
+
+        width: 220
+        height: 60
+        padding: 6
+        margins: 0
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
         background: Rectangle {
             color: rootWindow.bgPanel
             border.color: rootWindow.borderCol
             border.width: 1
-            radius: 8
+            radius: 12 // Sleek rounded corners
         }
-        MenuItem {
-            text: "➕ Add to Queue"
-            onTriggered: {
-                if (trackContextMenu.trackIndex >= 0) {
-                    var t = libraryModel.getTrack(trackContextMenu.trackIndex);
-                    player.enqueueTrack(t.url, t.title, t.artist, t.album, t.artUrl);
+
+        contentItem: Button {
+            id: queueAddBtn
+            anchors.fill: parent
+
+            background: Rectangle {
+                color: queueAddBtn.hovered ? libraryRoot.hoverOverlay : "transparent"
+                radius: 8
+            }
+
+            contentItem: RowLayout {
+                spacing: 15
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+
+                // Beautiful colored icon pill
+                Rectangle {
+                    width: 32
+                    height: 32
+                    radius: 8
+                    color: settings && settings.accentColor ? settings.accentColor : "#0078D7"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "➕"
+                        color: "white"
+                        font.pixelSize: 14
+                    }
+                }
+
+                Text {
+                    text: "Add to Queue"
+                    color: rootWindow.textMain
+                    font.pixelSize: 15
+                    font.bold: true
+                    font.family: "Segoe UI"
+                    Layout.fillWidth: true
                 }
             }
-            contentItem: Text {
-                text: parent.text;
-                color: rootWindow.textMain;
-                font.pixelSize: 14;
-                font.bold: true;
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 10
-            }
-            background: Rectangle {
-                implicitWidth: 180
-                implicitHeight: 40
-                color: parent.highlighted ? libraryRoot.hoverOverlay : "transparent";
-                radius: 6
+
+            // Guaranteed click execution using native Button logic
+            onClicked: {
+                if (trackContextMenu.trackIndex >= 0 && libraryRoot.libraryModel && libraryRoot.player) {
+                    var t = libraryRoot.libraryModel.getTrack(trackContextMenu.trackIndex);
+                    if (t && t.url) {
+                        libraryRoot.player.enqueueTrack(t.url, t.title, t.artist, t.album, t.artUrl);
+                    }
+                }
+                trackContextMenu.close();
             }
         }
     }
@@ -329,9 +370,6 @@ Rectangle {
 
                         Text { text: trackNumber; color: rootWindow.textMain; Layout.preferredWidth: 30 * libraryRoot.uiScale; font.pixelSize: 13 * libraryRoot.uiScale; clip: true }
 
-                        // =========================================================
-                        // NEW: PATH, FILETYPE, AND FILENAME DETAILS
-                        // =========================================================
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
@@ -349,7 +387,6 @@ Rectangle {
                             Text {
                                 text: {
                                     if (trackUrl.startsWith("cdda://")) return "CD AUDIO  •  " + trackUrl;
-                                    // Decodes URL spaces (%20) and strips "file:///"
                                     var path = decodeURIComponent(trackUrl.replace(/^(file:\/{2,3})/, ""));
                                     var ext = path.substring(path.lastIndexOf('.') + 1).toUpperCase();
                                     return ext + "  •  " + path;
@@ -357,7 +394,7 @@ Rectangle {
                                 color: rootWindow.textSub
                                 opacity: 0.6
                                 Layout.fillWidth: true
-                                elide: Text.ElideMiddle // Truncates the middle so you always see Drive Letter and Filename
+                                elide: Text.ElideMiddle
                                 font.pixelSize: 10 * libraryRoot.uiScale
                                 clip: true
                             }
@@ -377,8 +414,11 @@ Rectangle {
                             if (mouse.button === Qt.RightButton) {
                                 trackContextMenu.trackIndex = index;
                                 var pos = ma.mapToItem(libraryRoot, mouse.x, mouse.y);
-                                trackContextMenu.x = pos.x;
-                                trackContextMenu.y = pos.y;
+
+                                // BOUNDARY MATH: Prevents the menu from opening off-screen!
+                                trackContextMenu.x = Math.min(pos.x, libraryRoot.width - trackContextMenu.width);
+                                trackContextMenu.y = Math.min(pos.y, libraryRoot.height - trackContextMenu.height);
+
                                 trackContextMenu.open();
                             }
                         }
@@ -461,8 +501,11 @@ Rectangle {
                             if (mouse.button === Qt.RightButton) {
                                 trackContextMenu.trackIndex = index;
                                 var pos = gridMa.mapToItem(libraryRoot, mouse.x, mouse.y);
-                                trackContextMenu.x = pos.x;
-                                trackContextMenu.y = pos.y;
+
+                                // BOUNDARY MATH: Prevents the menu from opening off-screen!
+                                trackContextMenu.x = Math.min(pos.x, libraryRoot.width - trackContextMenu.width);
+                                trackContextMenu.y = Math.min(pos.y, libraryRoot.height - trackContextMenu.height);
+
                                 trackContextMenu.open();
                             }
                         }

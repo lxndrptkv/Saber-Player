@@ -100,8 +100,6 @@ Rectangle {
                 delegate: Rectangle {
                     width: ListView.view.width
                     height: 50
-
-                    // FIXED: Using HoverHandler instead of MouseArea so clicks pass through to the button!
                     color: queueHover.hovered ? (isDarkTheme ? "#22ffffff" : "#11000000") : "transparent"
                     radius: 6
 
@@ -136,6 +134,7 @@ Rectangle {
                         }
 
                         Button {
+                            z: 10
                             text: "✕"
                             background: Rectangle { color: "transparent" }
                             contentItem: Text { text: parent.text; color: parent.hovered ? "#ff4444" : rootWindow.textSub; font.pixelSize: 16 }
@@ -166,8 +165,6 @@ Rectangle {
                 delegate: Rectangle {
                     width: ListView.view.width
                     height: 50
-
-                    // FIXED: HoverHandler for visual effects
                     color: sugHover.hovered ? (isDarkTheme ? "#22ffffff" : "#11000000") : "transparent"
                     radius: 6
 
@@ -175,7 +172,6 @@ Rectangle {
 
                     HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
 
-                    // Make the entire row clickable to add to queue
                     MouseArea {
                         anchors.fill: parent
                         onClicked: player.enqueueTrack(modelData.url, modelData.title, modelData.artist, modelData.album, modelData.artUrl)
@@ -287,15 +283,18 @@ Rectangle {
             }
         }
 
+        // ========================================================
+        // SPOTIFY-STYLE CENTER CONTROLS
+        // ========================================================
         ColumnLayout {
             Layout.fillWidth: true
             Layout.maximumWidth: 600
             Layout.alignment: Qt.AlignHCenter
-            spacing: 2
+            spacing: 8
 
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
-                spacing: root.isMiniPlayer ? 6 : 12
+                spacing: root.isMiniPlayer ? 10 : 25 // Wider spacing to match Spotify layout
 
                 Behavior on spacing { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
@@ -309,20 +308,7 @@ Rectangle {
                         font.pixelSize: root.isMiniPlayer ? 14 : 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
-                        opacity: player.shuffle ? 1.0 : 0.4
-                    }
-                }
-
-                Button {
-                    text: "⏹"
-                    onClicked: { player.stop() }
-                    background: Rectangle { color: "transparent" }
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
-                        font.pixelSize: root.isMiniPlayer ? 14 : 16
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                        opacity: player.shuffle ? 1.0 : 0.6
                     }
                 }
 
@@ -339,27 +325,37 @@ Rectangle {
                     }
                 }
 
+                // FIXED: Animated Inverted Play Circle (Spotify Style)
                 Button {
+                    id: playBtn
                     text: player.isPlaying ? "⏸" : "▶"
                     onClicked: {
                         if (player.isPlaying) player.pause()
                         else player.play()
                     }
                     background: Rectangle {
-                        implicitWidth: root.isMiniPlayer ? 36 : 42
-                        implicitHeight: root.isMiniPlayer ? 36 : 42
+                        implicitWidth: root.isMiniPlayer ? 32 : 40
+                        implicitHeight: root.isMiniPlayer ? 32 : 40
                         radius: width / 2
-                        color: parent.hovered && settings ? Qt.lighter(settings.accentColor, 1.1) : (settings ? settings.accentColor : "grey")
-                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                        // Solid inversion color matching Spotify's circle
+                        color: rootWindow.textMain
+
+                        // "Pop" fluid physics on hover and click!
+                        scale: playBtn.pressed ? 0.94 : (playBtn.hovered ? 1.06 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
                         Behavior on implicitWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                         Behavior on implicitHeight { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: root.isAccentLight ? "black" : "white"
+
+                        // Icon takes the background color, creating a perfect punched-out look
+                        color: rootWindow.bgPanel
                         font.pixelSize: root.isMiniPlayer ? 14 : 18
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
+                        // Slight padding offset to visually balance the Play triangle
                         leftPadding: (!player.isPlaying) ? 3 : 0
                     }
                 }
@@ -378,19 +374,6 @@ Rectangle {
                 }
 
                 Button {
-                    text: "⏏"
-                    onClicked: { appFileDialog.open() }
-                    background: Rectangle { color: "transparent" }
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
-                        font.pixelSize: root.isMiniPlayer ? 14 : 16
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
-
-                Button {
                     text: player.repeatMode === 2 ? "🔂" : "🔁"
                     onClicked: { player.repeatMode = (player.repeatMode + 1) % 3 }
                     background: Rectangle { color: "transparent" }
@@ -400,7 +383,7 @@ Rectangle {
                         font.pixelSize: root.isMiniPlayer ? 14 : 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
-                        opacity: player.repeatMode > 0 ? 1.0 : 0.4
+                        opacity: player.repeatMode > 0 ? 1.0 : 0.6
                     }
                 }
             }
@@ -441,8 +424,11 @@ Rectangle {
                             property real safeWidth: trackSlider.visualProgress * parent.width
                             width: Number.isNaN(safeWidth) ? 0 : safeWidth
                             height: parent.height
-                            color: settings && settings.accentColor ? settings.accentColor : "white"
+
+                            // Change track color to accent on hover to match Spotify mechanics
+                            color: trackMouse.containsMouse && settings ? settings.accentColor : rootWindow.textMain
                             radius: 2
+                            Behavior on color { ColorAnimation { duration: 150 } }
                         }
                     }
 
@@ -454,7 +440,7 @@ Rectangle {
                         width: trackMouse.pressed || trackMouse.containsMouse ? 12 : 0
                         height: width
                         radius: width / 2
-                        color: settings && settings.accentColor ? settings.accentColor : "white"
+                        color: rootWindow.textMain
                         Behavior on width { NumberAnimation { duration: 100 } }
                     }
 
@@ -490,6 +476,18 @@ Rectangle {
             Behavior on Layout.preferredWidth { NumberAnimation { duration: 450; easing.type: Easing.InOutQuint } }
 
             Item { Layout.fillWidth: true }
+
+            // MOVED: Eject button safely relocated to the secondary control group
+            Button {
+                text: "⏏"
+                onClicked: { appFileDialog.open() }
+                background: Rectangle { color: "transparent" }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.hovered ? rootWindow.textMain : rootWindow.textSub
+                    font.pixelSize: root.isMiniPlayer ? 14 : 16
+                }
+            }
 
             Button {
                 text: player.volume === 0 ? "🔇" : "🔊"
@@ -533,8 +531,9 @@ Rectangle {
                         property real safeWidth: volSlider.visualVolume * parent.width
                         width: Number.isNaN(safeWidth) ? 0 : safeWidth
                         height: parent.height
-                        color: rootWindow.textSub
+                        color: volMouse.containsMouse && settings ? settings.accentColor : rootWindow.textSub
                         radius: 2
+                        Behavior on color { ColorAnimation { duration: 150 } }
                     }
                 }
 

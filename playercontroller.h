@@ -15,6 +15,8 @@
 #include <QIODevice>
 #include <QThread>
 #include <QMutex>
+
+// FIXED: Included so the compiler knows what 'CoverFetcher' is
 #include "coverfetcher.h"
 
 class PlayerController : public QObject
@@ -42,7 +44,6 @@ class PlayerController : public QObject
     Q_PROPERTY(QVariantList currentQueue READ currentQueue NOTIFY queueChanged)
     Q_PROPERTY(bool isQueueOpen READ isQueueOpen WRITE setIsQueueOpen NOTIFY isQueueOpenChanged)
 
-    // NEW: UI Indicator that the backend has successfully launched
     Q_PROPERTY(bool engineReady READ engineReady NOTIFY engineReadyChanged)
 
 public:
@@ -115,7 +116,7 @@ signals:
 private slots:
     void updateInterface();
     void updateVisualizer();
-    void onEngineReady(); // NEW: Triggered when background worker finishes
+    void onEngineReady();
 
 private:
     libvlc_instance_t *m_vlcInstance;
@@ -125,10 +126,13 @@ private:
 
     QString m_currentTitle;
     QString m_currentArtist;
+
+    // FIXED: Properly declared metadata variables
     QString m_currentAlbum;
     QString m_currentArt;
     bool m_artPending;
 
+    // FIXED: Properly declared CoverFetcher instance
     CoverFetcher m_coverFetcher;
 
     QTimer *m_ticker;
